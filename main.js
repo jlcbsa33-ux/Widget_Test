@@ -47,7 +47,7 @@
   function updateReport() {
     var inline = $("bd-inline");
     setReport(
-      "RAPPORT DE DIAGNOSTIC (v3)\n" +
+      "RAPPORT DE DIAGNOSTIC (v4)\n" +
       "0. Script en-tête : " + (($("bd-head") && $("bd-head").className.indexOf("ok") !== -1) ? "exécuté" : "non exécuté") + " ; script fin de page : " + (inline && inline.className.indexOf("ok") !== -1 ? "exécuté" : "non exécuté") + "\n" +
       "1. main.js : " + results.script + "\n" +
       "2. Environnement : " + results.env + "\n" +
@@ -113,19 +113,43 @@
     setTag("bd-t2", found.length ? "Objets détectés" : "Aucun objet de la plateforme", found.length ? "ok" : "ko");
     results.env = found.length ? "Détectés : " + found.join(", ") : "Aucun objet détecté (" + names.join(", ") + ")";
 
+    var topics = {};
+    var topicOrder = [];
+    var rawLog = [];
+    function short(v, n) {
+      var t;
+      try { t = typeof v === "string" ? v : JSON.stringify(v); } catch (e) { t = "[non affichable]"; }
+      if (t === undefined) t = "";
+      return t.length > n ? t.slice(0, n) + "…" : t;
+    }
     window.addEventListener("message", function (event) {
-      var preview;
-      try {
-        preview = typeof event.data === "string" ? event.data : JSON.stringify(event.data);
-      } catch (e) {
-        preview = "[contenu non affichable]";
+      var d = event.data;
+      var key, info = "";
+      if (d && typeof d === "object" && d.type === "MessageBus:publish" && d.options) {
+        key = (d.options.channel || "?") + " / " + (d.options.topic || "?");
+        info = short(d.options.data, 120);
+      } else if (d && typeof d === "object" && d.type) {
+        key = "type : " + d.type;
+        info = short(d, 120);
+      } else {
+        key = "autre";
+        info = short(d, 120);
       }
-      if (preview.length > 300) preview = preview.slice(0, 300) + "…";
-      messageLog.push("[" + new Date().toLocaleTimeString("fr-FR") + "] de " + event.origin + "\n" + preview);
-      if (messageLog.length > 15) messageLog.shift();
-      setText("bd-msgs", messageLog.join("\n\n"));
-      setTag("bd-t3", messageLog.length + " message(s) reçu(s)", "ok");
-      results.messages = messageLog.length + " message(s). Dernier : origine " + event.origin + ", contenu : " + preview;
+      if (!topics[key]) { topics[key] = { n: 0, last: "", at: "" }; topicOrder.push(key); }
+      topics[key].n++;
+      topics[key].last = info;
+      topics[key].at = new Date().toLocaleTimeString("fr-FR");
+      rawLog.push("[" + topics[key].at + "] " + event.origin + "\n" + short(d, 250));
+      if (rawLog.length > 6) rawLog.shift();
+
+      var lines = topicOrder.map(function (k) {
+        return topics[k].n + " x  " + k + "  (dernier " + topics[k].at + ", données : " + topics[k].last + ")";
+      });
+      setText("bd-msgs", "SUJETS REÇUS\n" + lines.join("\n") + "\n\nDERNIERS MESSAGES BRUTS\n" + rawLog.join("\n\n"));
+      var total = 0;
+      topicOrder.forEach(function (k) { total += topics[k].n; });
+      setTag("bd-t3", total + " message(s), " + topicOrder.length + " sujet(s)", "ok");
+      results.messages = total + " message(s), " + topicOrder.length + " sujet(s) :\n   " + lines.join("\n   ");
       updateReport();
     });
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Diagnostic widget Balineau (v3)</title>
+<title>Diagnostic widget Balineau (v4)</title>
 <style>
 .bd { font-family: "Segoe UI", Arial, sans-serif; font-size: 14px; line-height: 1.45; color: #1d2430; background: #f0f2f5; padding: 14px; }
 .bd * { box-sizing: border-box; }
@@ -25,7 +25,7 @@
 .bd label { display: block; margin: 8px 0 3px; color: #4a5565; }
 .bd input { width: 100%; padding: 7px 9px; font: inherit; color: #1d2430; background: #ffffff; border: 1px solid #8d97a5; border-radius: 4px; }
 .bd button { font: inherit; font-weight: 600; margin-top: 8px; padding: 7px 14px; cursor: pointer; color: #ffffff; background: #0b5cab; border: 0; border-radius: 4px; }
-.bd pre, .bd textarea { font-family: Consolas, "Courier New", monospace; font-size: 12px; color: #1d2430; background: #f6f7f9; border: 1px solid #c9d0d9; border-radius: 4px; padding: 8px; margin: 8px 0 0; width: 100%; white-space: pre-wrap; word-break: break-all; max-height: 160px; overflow: auto; }
+.bd pre, .bd textarea { font-family: Consolas, "Courier New", monospace; font-size: 12px; color: #1d2430; background: #f6f7f9; border: 1px solid #c9d0d9; border-radius: 4px; padding: 8px; margin: 8px 0 0; width: 100%; white-space: pre-wrap; word-break: break-all; max-height: 260px; overflow: auto; }
 .bd textarea { height: 200px; resize: vertical; }
 </style>
 <script type="text/javascript">
@@ -45,12 +45,12 @@
   }, 150);
 })();
 </script>
-<script type="text/javascript" src="https://jlcbsa33-ux.github.io/Widget_Test/main.js?v=3"></script>
+<script type="text/javascript" src="https://jlcbsa33-ux.github.io/Widget_Test/main.js?v=4"></script>
 </head>
 <body>
 <div class="bd" id="bd">
 
-  <h1>Diagnostic du widget Balineau (v3)</h1>
+  <h1>Diagnostic du widget Balineau (v4)</h1>
   <p class="bd-sub">Teste si un script placé dans un fichier séparé (main.js) s’exécute dans ce widget.</p>
 
   <div class="bd-banner ko" id="bd-head">Script en ligne dans l’en-tête : non exécuté.</div>
@@ -77,7 +77,7 @@
 
   <div class="bd-card">
     <h2>3. Messages reçus des autres widgets <span class="bd-tag" id="bd-t3">Aucun message</span></h2>
-    <p class="bd-muted">Cliquez un objet dans le Product Structure Explorer, puis une tâche dans le Gantt.</p>
+    <p class="bd-muted">Cliquez un objet dans le Product Structure Explorer, puis une tâche dans le Gantt : les sujets (topics) échangés sur le bus de la plateforme sont regroupés ci-dessous.</p>
     <pre id="bd-msgs">En attente de messages…</pre>
   </div>
 
