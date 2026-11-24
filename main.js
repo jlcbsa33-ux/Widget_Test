@@ -47,8 +47,8 @@
   function updateReport() {
     var inline = $("bd-inline");
     setReport(
-      "RAPPORT DE DIAGNOSTIC (paquet)\n" +
-      "0. Script en ligne : " + (inline && inline.className.indexOf("ok") !== -1 ? "exécuté" : "non exécuté") + "\n" +
+      "RAPPORT DE DIAGNOSTIC (v3)\n" +
+      "0. Script en-tête : " + (($("bd-head") && $("bd-head").className.indexOf("ok") !== -1) ? "exécuté" : "non exécuté") + " ; script fin de page : " + (inline && inline.className.indexOf("ok") !== -1 ? "exécuté" : "non exécuté") + "\n" +
       "1. main.js : " + results.script + "\n" +
       "2. Environnement : " + results.env + "\n" +
       "3. Messages : " + results.messages + "\n" +
@@ -186,5 +186,16 @@
     updateReport();
   }
 
-  try { main(); } catch (e) { fail(e && e.message ? e.message : String(e)); }
+  if (window.__bdMain) return;
+  window.__bdMain = true;
+  var tries = 0;
+  var timer = setInterval(function () {
+    tries++;
+    if ($("bd-banner")) {
+      clearInterval(timer);
+      try { main(); } catch (e) { fail(e && e.message ? e.message : String(e)); }
+    } else if (tries > 80) {
+      clearInterval(timer);
+    }
+  }, 150);
 })();

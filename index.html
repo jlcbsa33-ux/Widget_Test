@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Diagnostic widget Balineau (paquet)</title>
+<title>Diagnostic widget Balineau (v3)</title>
 <style>
 .bd { font-family: "Segoe UI", Arial, sans-serif; font-size: 14px; line-height: 1.45; color: #1d2430; background: #f0f2f5; padding: 14px; }
 .bd * { box-sizing: border-box; }
@@ -28,15 +28,34 @@
 .bd pre, .bd textarea { font-family: Consolas, "Courier New", monospace; font-size: 12px; color: #1d2430; background: #f6f7f9; border: 1px solid #c9d0d9; border-radius: 4px; padding: 8px; margin: 8px 0 0; width: 100%; white-space: pre-wrap; word-break: break-all; max-height: 160px; overflow: auto; }
 .bd textarea { height: 200px; resize: vertical; }
 </style>
+<script type="text/javascript">
+(function () {
+  window.__bdHead = new Date().toLocaleTimeString("fr-FR");
+  var tries = 0;
+  var timer = setInterval(function () {
+    var el = document.getElementById("bd-head");
+    tries++;
+    if (el) {
+      el.className = "bd-banner ok";
+      el.textContent = "Script en ligne dans l’en-tête : exécuté à " + window.__bdHead + ".";
+      clearInterval(timer);
+    } else if (tries > 80) {
+      clearInterval(timer);
+    }
+  }, 150);
+})();
+</script>
+<script type="text/javascript" src="https://jlcbsa33-ux.github.io/Widget_Test/main.js?v=3"></script>
 </head>
 <body>
 <div class="bd" id="bd">
 
-  <h1>Diagnostic du widget Balineau (paquet)</h1>
+  <h1>Diagnostic du widget Balineau (v3)</h1>
   <p class="bd-sub">Teste si un script placé dans un fichier séparé (main.js) s’exécute dans ce widget.</p>
 
-  <div class="bd-banner ko" id="bd-inline">Script en ligne : non exécuté.</div>
-  <div class="bd-banner ko" id="bd-banner">Fichier main.js : non chargé ou non exécuté.</div>
+  <div class="bd-banner ko" id="bd-head">Script en ligne dans l’en-tête : non exécuté.</div>
+  <div class="bd-banner ko" id="bd-inline">Script en ligne en fin de page : non exécuté.</div>
+  <div class="bd-banner ko" id="bd-banner">Fichier main.js (adresse complète, en-tête) : non chargé ou non exécuté.</div>
 
   <div class="bd-card">
     <h2>1. Exécution <span class="bd-tag" id="bd-t1">…</span></h2>
@@ -79,12 +98,11 @@
 
 </div>
 
-<script>
+<script type="text/javascript">
 (function () {
   var el = document.getElementById("bd-inline");
-  if (el) { el.className = "bd-banner ok"; el.textContent = "Script en ligne : exécuté."; }
+  if (el) { el.className = "bd-banner ok"; el.textContent = "Script en ligne en fin de page : exécuté."; }
 })();
 </script>
-<script src="main.js"></script>
 </body>
 </html>
