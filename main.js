@@ -37,6 +37,17 @@
 
   window.addEventListener("error", function (e) { fail(e.message); });
 
+  function getRequire() {
+    var cands = [["cette page", window], ["cadre parent", window.parent], ["fenêtre principale", window.top]];
+    for (var i = 0; i < cands.length; i++) {
+      try {
+        var w = cands[i][1];
+        if (w && typeof w.require === "function") return { req: w.require, from: cands[i][0] };
+      } catch (e) {}
+    }
+    return null;
+  }
+
   var results = { script: "", env: "", messages: "Aucun message reçu", ws: "Non testé" };
   var messageLog = [];
 
@@ -47,12 +58,13 @@
   function updateReport() {
     var inline = $("bd-inline");
     setReport(
-      "RAPPORT DE DIAGNOSTIC (v4)\n" +
+      "RAPPORT DE DIAGNOSTIC (v5)\n" +
       "0. Script en-tête : " + (($("bd-head") && $("bd-head").className.indexOf("ok") !== -1) ? "exécuté" : "non exécuté") + " ; script fin de page : " + (inline && inline.className.indexOf("ok") !== -1 ? "exécuté" : "non exécuté") + "\n" +
       "1. main.js : " + results.script + "\n" +
       "2. Environnement : " + results.env + "\n" +
       "3. Messages : " + results.messages + "\n" +
-      "4. WAFData : " + results.ws + "\n"
+      "4. WAFData : " + results.ws + "\n" +
+      "5. API widget/UWA : " + (results.api || "") + "\n"
     );
   }
 
@@ -100,18 +112,27 @@
     names.forEach(function (n) {
       var present = false;
       try { present = typeof window[n] !== "undefined"; } catch (e) {}
-      if (present) found.push(n);
+      if (present) found.push(n + " (" + typeof window[n] + ")");
       var tr = document.createElement("tr");
       var td1 = document.createElement("td");
       var td2 = document.createElement("td");
       td1.textContent = n;
-      td2.textContent = present ? "Détecté" : "Absent";
+      td2.textContent = present ? "Détecté (" + typeof window[n] + ")" : "Absent";
       tr.appendChild(td1);
       tr.appendChild(td2);
       if (table) table.appendChild(tr);
     });
     setTag("bd-t2", found.length ? "Objets détectés" : "Aucun objet de la plateforme", found.length ? "ok" : "ko");
     results.env = found.length ? "Détectés : " + found.join(", ") : "Aucun objet détecté (" + names.join(", ") + ")";
+
+    function listKeys(obj, max) {
+      var out = [];
+      try { for (var k in obj) { out.push(k); if (out.length >= max) break; } } catch (e) {}
+      return out;
+    }
+    var apiText = "widget : " + listKeys(window.widget, 60).join(", ") + "\nUWA : " + listKeys(window.UWA, 40).join(", ");
+    setText("bd-api", apiText);
+    results.api = apiText.length > 600 ? apiText.slice(0, 600) + "…" : apiText;
 
     var topics = {};
     var topicOrder = [];
@@ -163,16 +184,17 @@
           setText("bd-ws", "Saisissez une adresse qui commence par https://");
           return;
         }
-        if (typeof window.require !== "function") {
+        var found2 = getRequire();
+        if (!found2) {
           setTag("bd-t4", "require absent", "ko");
-          setText("bd-ws", "Le chargeur de modules de la plateforme (require) n’est pas disponible : WAFData ne peut pas être utilisé depuis cette page.");
+          setText("bd-ws", "Le chargeur de modules (require) est introuvable dans cette page, dans le cadre parent et dans la fenêtre principale : WAFData ne peut pas être utilisé.");
           results.ws = "require absent";
           updateReport();
           return;
         }
         setTag("bd-t4", "En cours…", "");
         setText("bd-ws", "Requête en cours…");
-        window.require(["DS/WAFData/WAFData"], function (WAFData) {
+        found2.req(["DS/WAFData/WAFData"], function (WAFData) {
           try {
             WAFData.authenticatedRequest(url, {
               method: "GET",
@@ -180,14 +202,14 @@
                 var text = typeof response === "string" ? response : JSON.stringify(response);
                 setText("bd-ws", "Réponse reçue.\n\n" + String(text).slice(0, 300));
                 setTag("bd-t4", "Réponse reçue", "ok");
-                results.ws = "réponse reçue";
+                results.ws = "réponse reçue (require : " + found2.from + ")";
                 updateReport();
               },
               onFailure: function (error) {
                 var msg = error && error.message ? error.message : String(error);
                 setText("bd-ws", "La requête a échoué : " + msg);
                 setTag("bd-t4", "Échec", "ko");
-                results.ws = "échec (" + msg + ")";
+                results.ws = "échec (" + msg + ") (require : " + found2.from + ")";
                 updateReport();
               }
             });
