@@ -1,0 +1,190 @@
+(function () {
+  "use strict";
+
+  var script = document.currentScript;
+  var root = document;
+  var rootKind = "document de la page";
+  try {
+    if (script && script.getRootNode) {
+      var r = script.getRootNode();
+      if (r && r.querySelector) {
+        root = r;
+        if (r !== document) rootKind = "arbre isolé (shadow DOM)";
+      }
+    }
+  } catch (e) {}
+
+  function $(id) {
+    return root.querySelector("#" + id) || document.getElementById(id);
+  }
+  function setText(id, text) {
+    var el = $(id);
+    if (el) el.textContent = text;
+  }
+  function setTag(id, text, kind) {
+    var el = $(id);
+    if (!el) return;
+    el.textContent = text;
+    el.className = "bd-tag" + (kind ? " " + kind : "");
+  }
+  function fail(msg) {
+    var b = $("bd-banner");
+    if (b) {
+      b.className = "bd-banner ko";
+      b.textContent = "Fichier main.js : erreur : " + msg;
+    }
+  }
+
+  window.addEventListener("error", function (e) { fail(e.message); });
+
+  var results = { script: "", env: "", messages: "Aucun message reçu", ws: "Non testé" };
+  var messageLog = [];
+
+  function setReport(text) {
+    var el = $("bd-report");
+    if (el) el.value = text;
+  }
+  function updateReport() {
+    var inline = $("bd-inline");
+    setReport(
+      "RAPPORT DE DIAGNOSTIC (paquet)\n" +
+      "0. Script en ligne : " + (inline && inline.className.indexOf("ok") !== -1 ? "exécuté" : "non exécuté") + "\n" +
+      "1. main.js : " + results.script + "\n" +
+      "2. Environnement : " + results.env + "\n" +
+      "3. Messages : " + results.messages + "\n" +
+      "4. WAFData : " + results.ws + "\n"
+    );
+  }
+
+  function main() {
+    var b = $("bd-banner");
+    if (b) {
+      b.className = "bd-banner ok";
+      b.textContent = "Fichier main.js : exécuté à " + new Date().toLocaleTimeString("fr-FR") + ".";
+    }
+
+    var inFrame;
+    try { inFrame = window.self !== window.top; } catch (e) { inFrame = true; }
+    setText("bd-frame", inFrame ? "Oui" : "Non (page ouverte seule)");
+    setText("bd-url", location.href);
+    setText("bd-root", rootKind);
+    setText("bd-time", new Date().toLocaleString("fr-FR"));
+
+    var parentInfo;
+    try {
+      parentInfo = window.parent.location.href + " (même origine)";
+    } catch (e) {
+      parentInfo = document.referrer
+        ? "Origine différente, référent : " + document.referrer
+        : "Origine différente (adresse non lisible)";
+    }
+    setText("bd-parent", parentInfo);
+
+    var storage;
+    try {
+      localStorage.setItem("bd-test", "1");
+      localStorage.removeItem("bd-test");
+      storage = "Disponible";
+    } catch (e) {
+      storage = "Bloqué";
+    }
+    setText("bd-storage", storage);
+
+    results.script = "exécuté ; " + (inFrame ? "dans un cadre" : "hors cadre") +
+      " ; position : " + rootKind + " ; parent : " + parentInfo + " ; stockage : " + storage;
+    setTag("bd-t1", "Script exécuté", "ok");
+
+    var names = ["widget", "UWA", "require", "requirejs", "define", "curl", "PlatformAPI"];
+    var found = [];
+    var table = $("bd-env");
+    names.forEach(function (n) {
+      var present = false;
+      try { present = typeof window[n] !== "undefined"; } catch (e) {}
+      if (present) found.push(n);
+      var tr = document.createElement("tr");
+      var td1 = document.createElement("td");
+      var td2 = document.createElement("td");
+      td1.textContent = n;
+      td2.textContent = present ? "Détecté" : "Absent";
+      tr.appendChild(td1);
+      tr.appendChild(td2);
+      if (table) table.appendChild(tr);
+    });
+    setTag("bd-t2", found.length ? "Objets détectés" : "Aucun objet de la plateforme", found.length ? "ok" : "ko");
+    results.env = found.length ? "Détectés : " + found.join(", ") : "Aucun objet détecté (" + names.join(", ") + ")";
+
+    window.addEventListener("message", function (event) {
+      var preview;
+      try {
+        preview = typeof event.data === "string" ? event.data : JSON.stringify(event.data);
+      } catch (e) {
+        preview = "[contenu non affichable]";
+      }
+      if (preview.length > 300) preview = preview.slice(0, 300) + "…";
+      messageLog.push("[" + new Date().toLocaleTimeString("fr-FR") + "] de " + event.origin + "\n" + preview);
+      if (messageLog.length > 15) messageLog.shift();
+      setText("bd-msgs", messageLog.join("\n\n"));
+      setTag("bd-t3", messageLog.length + " message(s) reçu(s)", "ok");
+      results.messages = messageLog.length + " message(s). Dernier : origine " + event.origin + ", contenu : " + preview;
+      updateReport();
+    });
+
+    var go = $("bd-ws-go");
+    if (go) {
+      go.addEventListener("click", function () {
+        var input = $("bd-ws-url");
+        var url = input ? input.value.replace(/^\s+|\s+$/g, "") : "";
+        if (!/^https:\/\//i.test(url)) {
+          setTag("bd-t4", "Adresse invalide", "ko");
+          setText("bd-ws", "Saisissez une adresse qui commence par https://");
+          return;
+        }
+        if (typeof window.require !== "function") {
+          setTag("bd-t4", "require absent", "ko");
+          setText("bd-ws", "Le chargeur de modules de la plateforme (require) n’est pas disponible : WAFData ne peut pas être utilisé depuis cette page.");
+          results.ws = "require absent";
+          updateReport();
+          return;
+        }
+        setTag("bd-t4", "En cours…", "");
+        setText("bd-ws", "Requête en cours…");
+        window.require(["DS/WAFData/WAFData"], function (WAFData) {
+          try {
+            WAFData.authenticatedRequest(url, {
+              method: "GET",
+              onComplete: function (response) {
+                var text = typeof response === "string" ? response : JSON.stringify(response);
+                setText("bd-ws", "Réponse reçue.\n\n" + String(text).slice(0, 300));
+                setTag("bd-t4", "Réponse reçue", "ok");
+                results.ws = "réponse reçue";
+                updateReport();
+              },
+              onFailure: function (error) {
+                var msg = error && error.message ? error.message : String(error);
+                setText("bd-ws", "La requête a échoué : " + msg);
+                setTag("bd-t4", "Échec", "ko");
+                results.ws = "échec (" + msg + ")";
+                updateReport();
+              }
+            });
+          } catch (e) {
+            setText("bd-ws", "Erreur lors de l’appel : " + e.message);
+            setTag("bd-t4", "Erreur", "ko");
+            results.ws = "erreur (" + e.message + ")";
+            updateReport();
+          }
+        }, function (err) {
+          var msg = err && err.message ? err.message : String(err);
+          setText("bd-ws", "Module DS/WAFData/WAFData introuvable : " + msg);
+          setTag("bd-t4", "Module introuvable", "ko");
+          results.ws = "module WAFData introuvable";
+          updateReport();
+        });
+      });
+    }
+
+    updateReport();
+  }
+
+  try { main(); } catch (e) { fail(e && e.message ? e.message : String(e)); }
+})();
