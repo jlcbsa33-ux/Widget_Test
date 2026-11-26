@@ -58,13 +58,15 @@
   function updateReport() {
     var inline = $("bd-inline");
     setReport(
-      "RAPPORT DE DIAGNOSTIC (v5)\n" +
+      "RAPPORT DE DIAGNOSTIC (v6)\n" +
       "0. Script en-tête : " + (($("bd-head") && $("bd-head").className.indexOf("ok") !== -1) ? "exécuté" : "non exécuté") + " ; script fin de page : " + (inline && inline.className.indexOf("ok") !== -1 ? "exécuté" : "non exécuté") + "\n" +
       "1. main.js : " + results.script + "\n" +
       "2. Environnement : " + results.env + "\n" +
       "3. Messages : " + results.messages + "\n" +
       "4. WAFData : " + results.ws + "\n" +
-      "5. API widget/UWA : " + (results.api || "") + "\n"
+      "5. API widget/UWA : " + (results.api || "") + "\n" +
+      "6. PlatformAPI : " + (results.pa || "non testé") + "\n" +
+      "7. Zone de dépôt : " + (results.drop || "rien déposé") + "\n"
     );
   }
 
@@ -134,6 +136,29 @@
     setText("bd-api", apiText);
     results.api = apiText.length > 600 ? apiText.slice(0, 600) + "…" : apiText;
 
+    var req0 = getRequire();
+    if (req0) {
+      try {
+        req0.req(["DS/PlatformAPI/PlatformAPI"], function (P) {
+          var keys = listKeys(P, 40).join(", ");
+          setText("bd-platform", "PlatformAPI : " + (keys || "chargé, aucune fonction listée"));
+          results.pa = "chargé : " + keys;
+          updateReport();
+        }, function (err) {
+          var msg0 = err && err.message ? err.message : String(err);
+          setText("bd-platform", "PlatformAPI : module introuvable (" + msg0 + ")");
+          results.pa = "module introuvable";
+          updateReport();
+        });
+      } catch (e) {
+        setText("bd-platform", "PlatformAPI : erreur (" + e.message + ")");
+        results.pa = "erreur (" + e.message + ")";
+      }
+    } else {
+      setText("bd-platform", "PlatformAPI : require introuvable, module non testé.");
+      results.pa = "require introuvable";
+    }
+
     var topics = {};
     var topicOrder = [];
     var rawLog = [];
@@ -173,6 +198,32 @@
       results.messages = total + " message(s), " + topicOrder.length + " sujet(s) :\n   " + lines.join("\n   ");
       updateReport();
     });
+
+    var drop = $("bd-drop");
+    if (drop) {
+      drop.addEventListener("dragenter", function (e) { e.preventDefault(); });
+      drop.addEventListener("dragover", function (e) { e.preventDefault(); });
+      drop.addEventListener("drop", function (e) {
+        e.preventDefault();
+        var out = [];
+        try {
+          var dt = e.dataTransfer;
+          var types = dt && dt.types ? Array.prototype.slice.call(dt.types) : [];
+          out.push("Types : " + (types.join(", ") || "aucun"));
+          types.forEach(function (t) {
+            var v = "";
+            try { v = dt.getData(t); } catch (err) {}
+            out.push("[" + t + "] " + short(v, 900));
+          });
+        } catch (err) {
+          out.push("Erreur : " + err.message);
+        }
+        var text = out.join("\n");
+        setText("bd-drop-out", text);
+        results.drop = text.length > 900 ? text.slice(0, 900) + "…" : text;
+        updateReport();
+      });
+    }
 
     var go = $("bd-ws-go");
     if (go) {
