@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Diagnostic 3DEXPERIENCE V9</title>
+<style>
+body{font:14px 'Segoe UI',Arial,sans-serif;background:#eef2f6;color:#1c2938;margin:0;padding:15px}
+main{max-width:1150px;margin:auto}h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:0 0 9px}
+.card{background:#fff;border:1px solid #cad3de;border-radius:9px;padding:15px;margin:12px 0}
+.hint{color:#536477}.status{padding:8px;background:#fff1d0;border-radius:5px}.ok{background:#d9f3e1}.bad{background:#ffe0de}
+.safe{background:#e8f4ff;border:1px solid #b9d7f2;border-radius:6px;padding:8px 10px;margin:8px 0}
+button{background:#1263a8;color:#fff;border:0;border-radius:5px;padding:8px 12px;cursor:pointer;margin:4px 4px 4px 0}
+button.sec{background:#5b6f84}button:disabled{opacity:.5}
+input[type=text]{padding:8px;border:1px solid #9caabb;border-radius:4px;max-width:100%;width:100%;box-sizing:border-box}
+pre,textarea{white-space:pre-wrap;overflow:auto;overflow-wrap:anywhere;background:#f7f9fb;border:1px solid #d2dae3;padding:10px;border-radius:5px;max-height:260px;font:12px Consolas,monospace;width:100%;box-sizing:border-box}
+textarea{height:270px}
+table{border-collapse:collapse;width:100%;font-size:12px}th,td{border:1px solid #d2dae3;padding:5px 7px;text-align:left;vertical-align:top;overflow-wrap:anywhere}th{background:#e6edf5}
+#bd-drop{border:2px dashed #7b9cbb;background:#f2f8ff;padding:25px;text-align:center;border-radius:8px}#bd-drop.over{background:#cde9ff}
+label{display:block;margin:7px 0}small{color:#56687b}.scroll{max-height:280px;overflow:auto}ol{margin:6px 0 6px 20px;padding:0}
+</style>
+<script defer src="https://jlcbsa33-ux.github.io/Widget_Test/main.js?v=9"></script>
+</head><body><main>
+<h1>Diagnostic des dialogues entre widgets 3DEXPERIENCE · V9</h1>
+<p class="hint">Tests non destructifs : écoute, lecture seule et un sujet de test privé. Aucune commande n'est envoyée aux widgets natifs.</p>
+<div class="safe"><b>Confidentialité :</b> cette version n'enregistre aucun contenu brut de message. Elle ne garde que les noms de sujets, les noms de champs (sans leurs valeurs), les sélections, les dépôts et les capacités annoncées par les widgets. Le rapport reste à relire avant tout partage.</div>
+<div id="bd-banner" class="status">Chargement de main.js…</div>
+
+<section class="card"><h2>1. Environnement</h2><pre id="bd-env">En attente…</pre></section>
+
+<section class="card"><h2>2. Widgets détectés</h2>
+<p class="hint">Applications dont des messages sont reçus. Si le Gantt n'apparaît pas, il n'a rien émis.</p>
+<div class="scroll"><table><thead><tr><th>Application</th><th>Messages</th><th>Premier</th><th>Dernier</th><th>Capacités annoncées (mcp)</th></tr></thead><tbody id="bd-apps"></tbody></table></div></section>
+
+<section class="card"><h2>3. Sélections et désélections reçues</h2>
+<p>Sélectionner un objet dans Product Structure Explorer ou dans la vue 3D. Les libellés manquants sont complétés à partir des sélections déjà vues.</p>
+<button id="bd-sel-listen" class="sec">Écouter aussi DS/ENO/select via PlatformAPI</button><span id="bd-sel-listen-state" class="hint"></span>
+<p id="bd-sel-count" class="hint"></p>
+<div class="scroll"><table><thead><tr><th>Heure</th><th>Événement</th><th>Type</th><th>Libellé</th><th>Identifiant</th><th>Chemin</th><th>Application</th><th>Sujets</th></tr></thead><tbody id="bd-sel"></tbody></table></div></section>
+
+<section class="card"><h2>4. Test Project Gantt guidé</h2>
+<ol>
+<li>Ouvrir Project Gantt dans le même onglet que ce widget.</li>
+<li>Cliquer sur « Démarrer le test Gantt ».</li>
+<li>Sélectionner une tâche dans le Gantt, puis une autre.</li>
+<li>Glisser une tâche dans la zone de dépôt de la section 6.</li>
+</ol>
+<button id="bd-gantt-start">Démarrer le test Gantt</button>
+<pre id="bd-gantt">Test non démarré.</pre></section>
+
+<section class="card"><h2>5. Activité des messages</h2>
+<p>Le fil montre les messages utiles. Un même message reçu par plusieurs sujets n'apparaît qu'une fois. Les messages de caméra, de contexte et de préférences sont comptés dans le catalogue mais n'apparaissent pas dans le fil.</p>
+<label><input type="checkbox" id="bd-noise"> Afficher aussi les messages répétitifs dans le fil</label>
+<button id="bd-mark-start" class="sec">Marquer le début</button><button id="bd-mark-end" class="sec">Marquer la fin</button><button id="bd-clear" class="sec">Tout effacer</button>
+<h2 style="margin-top:10px">Fil d'activité</h2><pre id="bd-feed">En attente…</pre>
+<h2 style="margin-top:10px">Catalogue des sujets (contenu : noms de champs seulement)</h2>
+<div class="scroll"><table><thead><tr><th>Sujet [nature]</th><th>Nb</th><th>Dernier</th><th>Structure du premier message</th></tr></thead><tbody id="bd-topics"></tbody></table></div></section>
+
+<section class="card"><h2>6. Dépôt CATIA / Project Gantt</h2>
+<p>Déposer un produit CATIA, puis une tâche du Gantt.</p>
+<div id="bd-drop" tabindex="0">Déposer ici un objet ou une tâche</div><pre id="bd-drop-out">Aucun dépôt.</pre></section>
+
+<section class="card"><h2>7. PlatformAPI : test à deux exemplaires</h2>
+<p>Ouvrir deux exemplaires de ce widget dans le même dashboard. Dans les deux : « S'abonner ». Puis publier depuis l'un et regarder les compteurs de l'autre.</p>
+<button id="bd-subscribe">S'abonner au sujet test</button><button id="bd-publish">Publier un ping test</button><button id="bd-unsubscribe" class="sec">Se désabonner</button>
+<pre id="bd-platform">Chargement du module…</pre></section>
+
+<section class="card"><h2>8. Web Services 3DSpace (lecture seule)</h2>
+<p class="hint">La recherche de l'adresse 3DSpace se lance automatiquement. Elle utilise le service de la plateforme, puis les préférences du widget, puis un dépôt déjà fait. Le test GET n'affiche que les noms de champs de la réponse.</p>
+<button id="bd-ws-detect" class="sec">Relancer la détection de l'adresse</button>
+<label for="bd-ws-base">Adresse 3DSpace (https://…/enovia)</label><input type="text" id="bd-ws-base" placeholder="Détection automatique ou saisie manuelle">
+<label for="bd-ws-path">Chemin à lire</label><input type="text" id="bd-ws-path" value="/resources/v1/application/CSRF">
+<button id="bd-ws-go">Tester GET</button>
+<pre id="bd-ws">Non testé.</pre></section>
+
+<section class="card"><h2>9. Rapport V9</h2>
+<p>Le rapport contient les mêmes informations que les tableaux ci-dessus. Relire avant de le partager : il garde les libellés et identifiants des objets sélectionnés.</p>
+<button id="bd-report-refresh">Actualiser</button><button id="bd-report-copy">Copier</button><button id="bd-report-download">Télécharger .txt</button>
+<textarea id="bd-report" readonly></textarea><small id="bd-copy-status"></small></section>
+</main></body></html>
