@@ -3,18 +3,23 @@
 if (window.__asLoaded) return;
 window.__asLoaded = true;
 
-/* ===== Widget de test : association produit (CATIA / 3D) <-> tâche (Project Gantt) =====
+/* ===== Widget de test : association produit (CATIA / 3D) <-> tâche =====
    Ne fait que LIRE les messages de la plateforme. Aucune commande envoyée aux widgets natifs.
-   Les associations sont stockées localement (localStorage) et exportables en CSV / JSON. */
+   Les associations sont stockées localement (localStorage, par plateforme) et exportables en CSV / JSON. */
 
 var STORE_KEY = 'bd_assoc4d_v1';
 var MAX_LINKS = 5000, DEDUPE_MS = 500;
-var PROD_MAX = 200, TASK_MAX = 50;
+var PROD_MAX = 200, TASK_MAX = 50, UNH_MAX = 60;
+
+/* Plateforme déduite de l'adresse de la page (ex. r1132101217487-eu1-ifwe... -> R1132101217487) */
+var PLAT = (function () { var m = /^((?:oi|r)\d{6,})-/i.exec(location.hostname || ''); return m ? m[1].toUpperCase() : ''; })();
+var UNH_NOISE = /NGFilter|Frame3DXInfra|properties:|GetFilterSpec|volatileSubscription|\.im\.ds\.com|widget\.vc\.ds\.com|viewpoint|appProxyReady|sessionContent|LinkBIProxy|SyncFeatures|XApp\.Magic|onAppReady|preferenceModification/i;
 
 var state = { products: [], tasks: [], prodDesel: false, taskDesel: false, prodAt: '', taskAt: '' };
 var links = [];
 var labelCache = {};
 var seen = {};
+var unhandled = {};
 var pendingEmptyProd = null, pendingUnTask = null;
 var drops = 0, lastDropHost = '';
 var platform = null, subs = [];
@@ -25,6 +30,11 @@ function el(id) { return document.getElementById(id); }
 function txt(id, s) { var e = el(id); if (e) e.textContent = String(s); }
 function nowIso() { return new Date().toISOString(); }
 function hhmmss(iso) { return iso ? new Date(iso).toLocaleTimeString('fr-FR') : ''; }
+function localDt(iso) {
+  if (!iso) return '';
+  var d = new Date(iso);
+  return isNaN(d.getTime()) ? '' : d.toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
 function clip(x, n) { x = String(x == null ? '' : x); return x.length > n ? x.slice(0, n) + '…' : x; }
 function str(x, n) { return typeof x === 'string' || typeof x === 'number' ? clip(x, n || 120) : ''; }
 function add(parent, tag, text, cls) { var e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; parent.appendChild(e); return e; }
@@ -32,6 +42,15 @@ function clearEl(e) { while (e && e.firstChild) e.removeChild(e.firstChild); }
 function shortId(id) { id = String(id); return id.length > 14 ? id.slice(0, 6) + '…' + id.slice(-4) : id; }
 function setMsg(s) { txt('as-msg', s); }
 function idOf(it) { return it ? str(it.objectId || it.id || it.physicalId || it.physicalid || it.identifier || '', 80) : ''; }
+function isTaskItem(it) { return it && /task/i.test(str(it.objectType || it.type, 40)); }
+function envMismatch(t) { return !!(t && t.env && PLAT && String(t.env).toUpperCase() !== PLAT); }
+function normTopic(t) {
+  return String(t)
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, '<uuid>')
+    .replace(/[A-Za-z0-9]{20,}/g, '<id>')
+    .replace(/\d{6,}/g, '<n>')
+    .slice(0, 100);
+}
 
 /* Noms de champs seulement (diagnostic) */
 function shape(o, depth) {
@@ -68,23 +87,34 @@ function scheduleDiag() {
   diagTimer = setTimeout(function () { diagTimer = null; renderDiag(); }, 500);
 }
 
+function noteUnhandled(label) {
+  if (UNH_NOISE.test(label)) return;
+  var nt = normTopic(label), u = unhandled[nt];
+  if (!u) { if (Object.keys(unhandled).length >= UNH_MAX) return; u = unhandled[nt] = { count: 0, last: '' }; }
+  u.count++; u.last = nowIso();
+}
+
 function onMessage(e) {
   diag.msgs++;
   scheduleDiag();
   if (!originOk(e.origin)) { diag.ignored++; return; }
   var d = e.data;
   if (!(d && typeof d === 'object' && d.type === 'MessageBus:publish' && d.options)) return;
-  route(String(d.options.topic || ''), d.options.data);
+  var topic = String(d.options.topic || '');
+  if (!route(topic, d.options.data)) noteUnhandled((d.options.channel || '?') + ' / ' + topic);
 }
 
+/* retourne true si le message a été utilisé */
 function route(topic, body) {
-  if (!body || typeof body !== 'object') return;
+  if (!body || typeof body !== 'object') return false;
   var src = str(body.source, 40);
-  if (/(^|\/)ENOTASK_AP\.(select|unselect)$/.test(topic) || (src === 'ENOTASK_AP' && body.data && Array.isArray(body.data.items))) {
+  var items = body.data && Array.isArray(body.data.items) ? body.data.items : null;
+  if (/(^|\/)ENOTASK_AP\.(select|unselect)$/.test(topic) || (items && (src === 'ENOTASK_AP' || items.some(isTaskItem)))) {
     handleTask(topic, body);
-  } else if (body.data && Array.isArray(body.data.paths)) {
-    handleSelection(body);
+    return true;
   }
+  if (body.data && Array.isArray(body.data.paths)) { handleSelection(body); return true; }
+  return false;
 }
 
 function handleSelection(body) {
@@ -118,6 +148,10 @@ function handleSelection(body) {
   render();
 }
 
+function taskOf(it, body, via) {
+  return { id: idOf(it), type: str(it.objectType || it.type, 40), label: str(it.displayName || it.label || it.title || it.name, 120), source: str(it.source || (body && body.source), 40), env: str(it.envId, 40), via: via };
+}
+
 function handleTask(topic, body) {
   var isUn = /unselect$/.test(topic);
   var items = body.data && Array.isArray(body.data.items) ? body.data.items : [];
@@ -133,9 +167,7 @@ function handleTask(topic, body) {
     return;
   }
   if (pendingUnTask) { clearTimeout(pendingUnTask); pendingUnTask = null; }
-  var tasks = items.map(function (it) {
-    return { id: idOf(it), type: str(it.objectType || it.type, 40), label: str(it.displayName || it.label || it.title || it.name, 120), source: str(it.source || body.source, 40) };
-  }).filter(function (t) { return t.id; });
+  var tasks = items.map(function (it) { return taskOf(it, body, 'sélection'); }).filter(function (t) { return t.id; });
   if (!tasks.length) { render(); return; }
   state.tasks = tasks.slice(0, TASK_MAX); state.taskDesel = false; state.taskAt = nowIso();
   render();
@@ -143,7 +175,10 @@ function handleTask(topic, body) {
 
 /* ---------- associations ---------- */
 function prodLabel(p) { return p.label || labelCache[p.id] || ''; }
-function prodPath(p) { return p.pathIds.map(function (id, i) { return p.pathLabels[i] || labelCache[id] || '…'; }).join(' › '); }
+function prodPath(p) {
+  var parts = p.pathIds.map(function (id, i) { return p.pathLabels[i] || labelCache[id] || ''; }).filter(Boolean);
+  return parts.join(' › ') || '…';
+}
 function findLink(pid, tid) {
   for (var i = 0; i < links.length; i++) if (links[i].pid === pid && links[i].tid === tid) return i;
   return -1;
@@ -151,17 +186,17 @@ function findLink(pid, tid) {
 
 function associate() {
   if (!state.products.length || !state.tasks.length) { setMsg('Sélectionner d\'abord au moins un produit et une tâche.'); return; }
-  var n = 0, dup = 0, full = false;
+  var n = 0, dup = 0, full = false, foreign = state.tasks.some(envMismatch);
   state.tasks.forEach(function (t) {
     state.products.forEach(function (p) {
       if (findLink(p.id, t.id) >= 0) { dup++; return; }
       if (links.length >= MAX_LINKS) { full = true; return; }
-      links.push({ pid: p.id, ptype: p.type, plabel: prodLabel(p), ppath: prodPath(p), tid: t.id, ttype: t.type, tlabel: t.label, at: nowIso() });
+      links.push({ pid: p.id, ptype: p.type, plabel: prodLabel(p), ppath: prodPath(p), tid: t.id, ttype: t.type, tlabel: t.label, tsrc: t.source, plat: PLAT, at: nowIso() });
       n++;
     });
   });
   save();
-  setMsg(n + ' association(s) créée(s)' + (dup ? ', ' + dup + ' déjà existante(s)' : '') + (full ? ' ; limite de ' + MAX_LINKS + ' atteinte' : '') + '.');
+  setMsg(n + ' association(s) créée(s)' + (dup ? ', ' + dup + ' déjà existante(s)' : '') + (full ? ' ; limite de ' + MAX_LINKS + ' atteinte' : '') + (foreign ? ' ⚠ tâche d\'une autre plateforme que celle de la page : vérifier.' : '.'));
   render();
 }
 
@@ -175,12 +210,18 @@ function validLink(l) {
   return l && typeof l === 'object' && typeof l.pid === 'string' && typeof l.tid === 'string' && l.pid && l.tid;
 }
 function cleanLink(l) {
-  return { pid: clip(l.pid, 80), ptype: str(l.ptype, 40), plabel: str(l.plabel, 120), ppath: str(l.ppath, 400), tid: clip(l.tid, 80), ttype: str(l.ttype, 40), tlabel: str(l.tlabel, 120), at: str(l.at, 40) };
+  return { pid: clip(l.pid, 80), ptype: str(l.ptype, 40), plabel: str(l.plabel, 120), ppath: str(l.ppath, 400), tid: clip(l.tid, 80), ttype: str(l.ttype, 40), tlabel: str(l.tlabel, 120), tsrc: str(l.tsrc, 40), plat: str(l.plat, 40), at: str(l.at, 40) };
 }
 function loadStore() {
   try {
     var s = localStorage.getItem(STORE_KEY);
-    if (s) { var o = JSON.parse(s); if (o && Array.isArray(o.links)) links = o.links.filter(validLink).slice(0, MAX_LINKS).map(cleanLink); }
+    if (s) {
+      var o = JSON.parse(s);
+      if (o && Array.isArray(o.links)) {
+        links = o.links.filter(validLink).slice(0, MAX_LINKS).map(cleanLink);
+        links.forEach(function (l) { if (!l.plat) l.plat = PLAT; });
+      }
+    }
     diag.storage = 'localStorage disponible';
   } catch (e) { diag.storage = 'localStorage indisponible : exporter régulièrement'; }
 }
@@ -196,11 +237,11 @@ function csvCell(v) {
   return '"' + v.replace(/"/g, '""') + '"';
 }
 function toCsv() {
-  var rows = [['tache_id', 'tache_nom', 'tache_type', 'produit_id', 'produit_type', 'produit_libelle', 'chemin', 'date_association']];
-  links.forEach(function (l) { rows.push([l.tid, l.tlabel, l.ttype, l.pid, l.ptype, l.plabel, l.ppath, l.at]); });
+  var rows = [['tache_id', 'tache_nom', 'tache_type', 'produit_id', 'produit_type', 'produit_libelle', 'chemin', 'date_association', 'plateforme', 'tache_source']];
+  links.forEach(function (l) { rows.push([l.tid, l.tlabel, l.ttype, l.pid, l.ptype, l.plabel, l.ppath, l.at, l.plat, l.tsrc]); });
   return '\ufeff' + rows.map(function (r) { return r.map(csvCell).join(';'); }).join('\r\n');
 }
-function toJson() { return JSON.stringify({ format: 'association-4d', version: 1, exported: nowIso(), links: links }, null, 1); }
+function toJson() { return JSON.stringify({ format: 'association-4d', version: 2, platform: PLAT, exported: nowIso(), links: links }, null, 1); }
 function download(name, text, mime) {
   try {
     var blob = new Blob([text], { type: mime }), u = URL.createObjectURL(blob), a = document.createElement('a');
@@ -213,23 +254,25 @@ function importText(text) {
   try { o = JSON.parse(text); } catch (e) { txt('as-io-msg', 'JSON invalide.'); return; }
   var arr = Array.isArray(o) ? o : (o && Array.isArray(o.links) ? o.links : null);
   if (!arr) { txt('as-io-msg', 'Aucune liste « links » trouvée.'); return; }
-  var n = 0, dup = 0, bad = 0;
+  var n = 0, dup = 0, bad = 0, other = 0;
   arr.slice(0, MAX_LINKS).forEach(function (l) {
     if (!validLink(l)) { bad++; return; }
     var c = cleanLink(l);
+    if (c.plat && PLAT && c.plat.toUpperCase() !== PLAT) { other++; return; }
+    if (!c.plat) c.plat = PLAT;
     if (findLink(c.pid, c.tid) >= 0) { dup++; return; }
     if (links.length >= MAX_LINKS) return;
     links.push(c); n++;
   });
   save(); render();
-  txt('as-io-msg', n + ' ajoutée(s), ' + dup + ' déjà présente(s), ' + bad + ' ignorée(s).');
+  txt('as-io-msg', n + ' ajoutée(s), ' + dup + ' déjà présente(s), ' + bad + ' ignorée(s)' + (other ? ', ' + other + ' refusée(s) car d\'une autre plateforme que ' + PLAT : '') + '.');
 }
 
 /* ---------- affichage ---------- */
 function renderSel(boxId, noteId, items, isTask, desel, at) {
   var box = el(boxId); clearEl(box);
   if (!items.length) {
-    add(box, 'div', isTask ? 'Sélectionner une tâche dans Project Gantt.' : 'Sélectionner un produit dans l\'arborescence ou la vue 3D.', 'hint');
+    add(box, 'div', isTask ? 'Ouvrir une tâche dans Collaborative Tasks, ou la déposer ci-dessous.' : 'Sélectionner un produit dans l\'arborescence ou la vue 3D.', 'hint');
     txt(noteId, '');
     return;
   }
@@ -237,10 +280,14 @@ function renderSel(boxId, noteId, items, isTask, desel, at) {
     var d = add(box, 'div', null, 'it' + (isTask ? ' t' : ''));
     var label = isTask ? it.label : prodLabel(it);
     add(d, 'b', (it.type ? it.type + ' · ' : '') + (label || '(libellé inconnu)'));
-    add(d, 'div', (isTask ? '' : prodPath(it) + ' — ') + shortId(it.id), 'sub');
+    var sub = isTask ? 'Source : ' + (it.source || '?') + ' (' + (it.via || 'sélection') + ') — ' + shortId(it.id) : prodPath(it) + ' — ' + shortId(it.id);
+    add(d, 'div', sub, 'sub');
   });
   if (items.length > 6) add(box, 'div', '+ ' + (items.length - 6) + ' autre(s)', 'hint');
-  txt(noteId, (desel ? 'Désélectionné — dernier choix conservé. ' : '') + 'Reçu à ' + hhmmss(at) + (items.length > 1 ? ' · ' + items.length + ' éléments' : ''));
+  var note = el(noteId);
+  clearEl(note);
+  if (isTask && items.some(envMismatch)) add(note, 'span', '⚠ Plateforme de la tâche (' + items.filter(envMismatch)[0].env + ') différente de celle de la page (' + PLAT + '). ', 'warn');
+  note.appendChild(document.createTextNode((desel ? 'Désélectionné — dernier choix conservé. ' : '') + 'Reçu à ' + hhmmss(at) + (items.length > 1 ? ' · ' + items.length + ' éléments' : '')));
 }
 
 function renderLinks() {
@@ -275,7 +322,7 @@ function renderTable() {
     add(tr, 'td', l.plabel || shortId(l.pid));
     add(tr, 'td', l.ptype);
     add(tr, 'td', l.ppath);
-    add(tr, 'td', l.at ? l.at.slice(0, 16).replace('T', ' ') : '');
+    add(tr, 'td', localDt(l.at));
     var td = add(tr, 'td'), b = add(td, 'button', '✕', 'del');
     b.title = 'Supprimer cette association';
     b.onclick = function () { removeLink(l.pid, l.tid); };
@@ -284,9 +331,10 @@ function renderTable() {
 }
 
 function renderDiag() {
+  var uk = Object.keys(unhandled).sort(function (a, b) { return unhandled[b].last < unhandled[a].last ? -1 : 1; }).slice(0, 14);
   txt('as-diag', [
     'widget : ' + typeof window.widget + ' ; require : ' + typeof window.require + ' ; iframe : ' + (window !== window.parent),
-    'Origine de la page : ' + location.origin,
+    'Origine de la page : ' + location.origin + ' ; plateforme déduite : ' + (PLAT || '(inconnue)'),
     'PlatformAPI : ' + diag.platform,
     'Abonnements PlatformAPI : ' + (subs.join(', ') || 'aucun'),
     'Messages reçus : ' + diag.msgs + ' ; ignorés (origine inattendue) : ' + diag.ignored,
@@ -295,7 +343,10 @@ function renderDiag() {
     'Dernier élément tâche — champs : ' + (diag.taskItemShape || '(aucun)'),
     'Dépôts : ' + drops,
     'Stockage : ' + diag.storage,
-    '3DSpace : ' + (diag.space ? 'adresse détectée (' + diag.spaceSource + ')' : 'non détectée') + ' ; service plateforme : ' + diag.compass
+    '3DSpace : ' + (diag.space ? 'adresse détectée (' + diag.spaceSource + ')' : 'non détectée') + ' ; service plateforme : ' + diag.compass,
+    '',
+    'Sujets reçus non utilisés depuis l\'observation (' + Object.keys(unhandled).length + ') :',
+    uk.length ? uk.map(function (k) { return '  ' + k + ' ×' + unhandled[k].count; }).join('\n') : '  (aucun)'
   ].join('\n'));
 }
 
@@ -406,25 +457,29 @@ function runGet() {
   }, function (e) { txt('as-ws-out', 'WAFData indisponible : ' + e); });
 }
 
-/* ---------- dépôt (secours) ---------- */
+/* ---------- dépôt ---------- */
 function processDrop(dt) {
   var raw = '';
   try { raw = dt.getData('text/plain') || dt.getData('text/searchitems') || ''; } catch (e) {}
   var obj; try { obj = JSON.parse(raw); } catch (e) { setMsg('Contenu déposé non reconnu.'); return; }
   var items = obj && obj.data && Array.isArray(obj.data.items) ? obj.data.items.slice(0, PROD_MAX) : [];
-  var tasks = [], prods = [];
+  var tasks = [], prods = [], srcs = {};
   items.forEach(function (it) {
     try { if (it.image) { var h = new URL(it.image).host; if (h) lastDropHost = h; } } catch (z) {}
     var id = idOf(it); if (!id) return;
-    var type = str(it.objectType || it.type, 40), label = str(it.displayName || it.label, 120);
-    if (/task/i.test(type) || str(it.source || obj.source, 40) === 'ENOTASK_AP') tasks.push({ id: id, type: type, label: label, source: 'drop' });
-    else { if (label) labelCache[id] = label; prods.push({ id: id, type: type, label: label, pathIds: [id], pathLabels: [label] }); }
+    var s = str(it.source || obj.source, 40); if (s) srcs[s] = 1;
+    if (isTaskItem(it) || s === 'ENOTASK_AP') tasks.push(taskOf(it, obj, 'dépôt'));
+    else {
+      var label = str(it.displayName || it.label, 120);
+      if (label) labelCache[id] = label;
+      prods.push({ id: id, type: str(it.objectType || it.type, 40), label: label, pathIds: [id], pathLabels: [label] });
+    }
   });
   drops++;
   if (tasks.length) { state.tasks = tasks.slice(0, TASK_MAX); state.taskDesel = false; state.taskAt = nowIso(); }
   if (prods.length) { state.products = prods; state.prodDesel = false; state.prodAt = nowIso(); }
   if (!diag.space && lastDropHost) detectSpace();
-  setMsg(tasks.length + ' tâche(s), ' + prods.length + ' produit(s) déposé(s).');
+  setMsg(tasks.length + ' tâche(s), ' + prods.length + ' produit(s) déposé(s)' + (Object.keys(srcs).length ? ' (source : ' + Object.keys(srcs).join(', ') + ')' : '') + '.');
   render();
 }
 
@@ -432,7 +487,7 @@ function processDrop(dt) {
 function init() {
   loadStore();
   var inFrame = typeof window.require === 'function' || (function () { try { return window.parent !== window && typeof window.parent.require === 'function'; } catch (e) { return false; } })();
-  txt('as-banner', inFrame ? 'Association 4D prête : en écoute des sélections.' : 'Hors dashboard : les sélections de la plateforme ne seront pas reçues. Seul le dépôt fonctionne.');
+  txt('as-banner', (inFrame ? 'Association 4D prête : en écoute des sélections.' : 'Hors dashboard : les sélections de la plateforme ne seront pas reçues. Seul le dépôt fonctionne.') + (PLAT ? ' Plateforme : ' + PLAT + '.' : ''));
   el('as-banner').className = 'status ' + (inFrame ? 'ok' : 'bad');
 
   window.addEventListener('message', onMessage);
@@ -447,6 +502,7 @@ function init() {
 
   el('as-assoc').onclick = associate;
   el('as-clear').onclick = function () { state.products = []; state.tasks = []; state.prodDesel = state.taskDesel = false; setMsg('Sélection vidée (les associations enregistrées sont conservées).'); render(); };
+  el('as-obs').onclick = function () { unhandled = {}; renderDiag(); };
 
   el('as-exp-csv').onclick = function () { var t = toCsv(); el('as-io').value = t; download('associations_4D.csv', t, 'text/csv;charset=utf-8'); txt('as-io-msg', links.length + ' association(s) exportée(s) en CSV.'); };
   el('as-exp-json').onclick = function () { var t = toJson(); el('as-io').value = t; download('associations_4D.json', t, 'application/json'); txt('as-io-msg', links.length + ' association(s) exportée(s) en JSON.'); };
