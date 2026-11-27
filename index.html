@@ -1,118 +1,17 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Diagnostic widget Balineau (v6)</title>
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Diagnostic 3DEXPERIENCE V7</title>
 <style>
-.bd { font-family: "Segoe UI", Arial, sans-serif; font-size: 14px; line-height: 1.45; color: #1d2430; background: #f0f2f5; padding: 14px; }
-.bd * { box-sizing: border-box; }
-.bd h1 { font-size: 17px; margin: 0 0 4px; }
-.bd h2 { font-size: 14px; margin: 0 0 6px; }
-.bd p { margin: 4px 0; }
-.bd .bd-sub { color: #4a5565; margin-bottom: 12px; }
-.bd .bd-banner { padding: 7px 12px; border-radius: 4px; font-weight: 600; margin-bottom: 6px; }
-.bd .bd-banner.ko { background: #fbe6e4; color: #8f1f17; border: 1px solid #e3a8a3; }
-.bd .bd-banner.ok { background: #e2f4e8; color: #14612f; border: 1px solid #9fd3b1; }
-.bd .bd-card { background: #ffffff; border: 1px solid #c9d0d9; border-radius: 6px; padding: 12px 14px; margin: 10px 0; }
-.bd .bd-tag { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 10px; margin-left: 6px; background: #fff2cc; color: #6b4e00; }
-.bd .bd-tag.ok { background: #e2f4e8; color: #14612f; }
-.bd .bd-tag.ko { background: #fbe6e4; color: #8f1f17; }
-.bd .bd-muted { color: #4a5565; }
-.bd table { border-collapse: collapse; margin-top: 6px; width: 100%; }
-.bd td { padding: 2px 10px 2px 0; vertical-align: top; word-break: break-all; }
-.bd td:first-child { color: #4a5565; white-space: nowrap; width: 1%; }
-.bd label { display: block; margin: 8px 0 3px; color: #4a5565; }
-.bd input { width: 100%; padding: 7px 9px; font: inherit; color: #1d2430; background: #ffffff; border: 1px solid #8d97a5; border-radius: 4px; }
-.bd button { font: inherit; font-weight: 600; margin-top: 8px; padding: 7px 14px; cursor: pointer; color: #ffffff; background: #0b5cab; border: 0; border-radius: 4px; }
-.bd pre, .bd textarea { font-family: Consolas, "Courier New", monospace; font-size: 12px; color: #1d2430; background: #f6f7f9; border: 1px solid #c9d0d9; border-radius: 4px; padding: 8px; margin: 8px 0 0; width: 100%; white-space: pre-wrap; word-break: break-all; max-height: 260px; overflow: auto; }
-.bd textarea { height: 200px; resize: vertical; }
-.bd .bd-drop { border: 2px dashed #8d97a5; border-radius: 6px; padding: 18px; text-align: center; color: #4a5565; background: #f6f7f9; margin-top: 6px; }
+body{font:14px 'Segoe UI',Arial,sans-serif;background:#eef2f6;color:#1c2938;margin:0;padding:15px}main{max-width:1050px;margin:auto}h1{font-size:22px}h2{font-size:17px;margin:0 0 9px}.card{background:white;border:1px solid #cad3de;border-radius:9px;padding:15px;margin:12px 0}.hint{color:#536477}.status{padding:8px;background:#fff1d0;border-radius:5px}.ok{background:#d9f3e1}.bad{background:#ffe0de}button{background:#1263a8;color:white;border:0;border-radius:5px;padding:8px 12px;cursor:pointer;margin:4px 4px 4px 0}button:disabled{opacity:.5}input{padding:8px;border:1px solid #9caabb;border-radius:4px;max-width:100%;width:340px}pre,textarea{white-space:pre-wrap;overflow:auto;overflow-wrap:anywhere;background:#f7f9fb;border:1px solid #d2dae3;padding:10px;border-radius:5px;max-height:260px;font:12px Consolas,monospace;width:100%;box-sizing:border-box}textarea{height:270px}#bd-drop{border:2px dashed #7b9cbb;background:#f2f8ff;padding:25px;text-align:center;border-radius:8px}#bd-drop.over{background:#cde9ff}label{display:block;margin:7px 0}small{color:#56687b}
 </style>
-<script type="text/javascript">
-(function () {
-  window.__bdHead = new Date().toLocaleTimeString("fr-FR");
-  var tries = 0;
-  var timer = setInterval(function () {
-    var el = document.getElementById("bd-head");
-    tries++;
-    if (el) {
-      el.className = "bd-banner ok";
-      el.textContent = "Script en ligne dans l’en-tête : exécuté à " + window.__bdHead + ".";
-      clearInterval(timer);
-    } else if (tries > 80) {
-      clearInterval(timer);
-    }
-  }, 150);
-})();
-</script>
-<script type="text/javascript" src="https://jlcbsa33-ux.github.io/Widget_Test/main.js?v=6"></script>
-</head>
-<body>
-<div class="bd" id="bd">
-
-  <h1>Diagnostic du widget Balineau (v6)</h1>
-  <p class="bd-sub">Teste si un script placé dans un fichier séparé (main.js) s’exécute dans ce widget.</p>
-
-  <div class="bd-banner ko" id="bd-head">Script en ligne dans l’en-tête : non exécuté.</div>
-  <div class="bd-banner ko" id="bd-inline">Script en ligne en fin de page : non exécuté.</div>
-  <div class="bd-banner ko" id="bd-banner">Fichier main.js (adresse complète, en-tête) : non chargé ou non exécuté.</div>
-
-  <div class="bd-card">
-    <h2>1. Exécution <span class="bd-tag" id="bd-t1">…</span></h2>
-    <table>
-      <tr><td>Dans un cadre</td><td id="bd-frame">…</td></tr>
-      <tr><td>Adresse de la page</td><td id="bd-url">…</td></tr>
-      <tr><td>Cadre parent</td><td id="bd-parent">…</td></tr>
-      <tr><td>Position dans la page</td><td id="bd-root">…</td></tr>
-      <tr><td>Stockage du navigateur</td><td id="bd-storage">…</td></tr>
-      <tr><td>Heure</td><td id="bd-time">…</td></tr>
-    </table>
-  </div>
-
-  <div class="bd-card">
-    <h2>2. Environnement de la plateforme <span class="bd-tag" id="bd-t2">…</span></h2>
-    <p class="bd-muted">Recherche d’objets propres aux widgets 3DEXPERIENCE.</p>
-    <table id="bd-env"></table>
-    <pre id="bd-api">…</pre>
-    <pre id="bd-platform">…</pre>
-  </div>
-
-  <div class="bd-card">
-    <h2>3. Messages reçus des autres widgets <span class="bd-tag" id="bd-t3">Aucun message</span></h2>
-    <p class="bd-muted">Cliquez un objet dans le Product Structure Explorer, puis une tâche dans le Gantt : les sujets (topics) échangés sur le bus de la plateforme sont regroupés ci-dessous.</p>
-    <pre id="bd-msgs">En attente de messages…</pre>
-  </div>
-
-  <div class="bd-card">
-    <h2>4. Appel aux Web Services (WAFData) <span class="bd-tag" id="bd-t4">Non testé</span></h2>
-    <p class="bd-muted">Saisissez l’adresse de votre 3DSpace puis lancez le test.</p>
-    <label for="bd-ws-url">Adresse à interroger</label>
-    <input type="text" id="bd-ws-url" placeholder="https://…/enovia" autocomplete="off">
-    <button type="button" id="bd-ws-go">Lancer le test</button>
-    <pre id="bd-ws">Aucun test lancé.</pre>
-  </div>
-
-  <div class="bd-card">
-    <h2>5. Zone de dépôt</h2>
-    <p class="bd-muted">Glissez un objet depuis le Product Structure Explorer (ou une tâche depuis le Gantt) et déposez-le dans le cadre ci-dessous.</p>
-    <div class="bd-drop" id="bd-drop">Déposez ici</div>
-    <pre id="bd-drop-out">Rien déposé pour l’instant.</pre>
-  </div>
-
-  <div class="bd-card">
-    <h2>Rapport à copier</h2>
-    <p class="bd-muted">Copiez ce texte et collez-le dans la conversation.</p>
-    <textarea id="bd-report" readonly></textarea>
-  </div>
-
-</div>
-
-<script type="text/javascript">
-(function () {
-  var el = document.getElementById("bd-inline");
-  if (el) { el.className = "bd-banner ok"; el.textContent = "Script en ligne en fin de page : exécuté."; }
-})();
-</script>
-</body>
-</html>
+<script>window.__bdHeadTime=new Date().toISOString();</script>
+<script defer src="https://jlcbsa33-ux.github.io/Widget_Test/main.js?v=7"></script>
+</head><body><main>
+<h1>Diagnostic des dialogues entre widgets 3DEXPERIENCE · V7</h1><p class="hint">Tests non destructifs. Le bouton de publication utilise uniquement un sujet de test privé, et ne pilote pas les widgets natifs.</p>
+<div id="bd-banner" class="status">Chargement de main.js…</div>
+<section class="card"><h2>1. Environnement (test V6 conservé)</h2><pre id="bd-env">En attente…</pre></section>
+<section class="card"><h2>2. Capture des messages et sélection CATIA</h2><p>Cliquer sur « Marquer le début », sélectionner un produit dans Product Structure Explorer, puis cliquer sur « Marquer la fin ». Refaire avec une sélection différente.</p><button id="bd-mark-start">Marquer le début</button><button id="bd-mark-end">Marquer la fin</button><button id="bd-clear">Effacer le journal</button><p id="bd-capture-state" class="hint">Capture en continu, aucun essai délimité.</p><pre id="bd-msgs">En attente…</pre></section>
+<section class="card"><h2>3. Dépôt CATIA / Project Gantt</h2><p>Déposer d'abord un produit CATIA, puis une tâche du Gantt. Le diagnostic affiche le protocole et les champs détectés.</p><div id="bd-drop" tabindex="0">Déposer ici un objet ou une tâche</div><pre id="bd-drop-out">Aucun dépôt.</pre></section>
+<section class="card"><h2>4. PlatformAPI : publication et abonnement de test</h2><p>Test local sur un sujet réservé <code>Balineau/DiagnosticV7</code>. Pour vérifier la communication entre deux exemplaires, ouvrir deux widgets V7 dans le même dashboard et publier depuis l'un.</p><button id="bd-subscribe">S'abonner au sujet test</button><button id="bd-publish">Publier un ping test</button><button id="bd-unsubscribe">Se désabonner</button><pre id="bd-platform">Chargement du module…</pre></section>
+<section class="card"><h2>5. Web Services (WAFData, test V6 conservé)</h2><p class="hint">Facultatif. Utiliser uniquement une URL HTTPS de lecture, sans paramètre sensible ni action modificatrice.</p><label for="bd-ws-url">URL HTTPS de lecture</label><input id="bd-ws-url" placeholder="https://…/enovia/…"><button id="bd-ws-go">Tester GET</button><pre id="bd-ws">Non testé.</pre></section>
+<section class="card"><h2>6. Rapport V7</h2><p>Le rapport masque les URL signées, jetons et identifiants personnels courants. Vérifier son contenu avant partage.</p><button id="bd-report-refresh">Actualiser</button><button id="bd-report-copy">Copier</button><button id="bd-report-download">Télécharger .txt</button><textarea id="bd-report" readonly></textarea><small id="bd-copy-status"></small></section>
+</main><script>window.__bdInlineTime=new Date().toISOString();</script></body></html>
