@@ -3,12 +3,13 @@
 if (window.__asLoaded) return;
 window.__asLoaded = true;
 
-/* ===== Widget de test : association produit (CATIA / 3D) <-> tâche =====
-   Ne fait que LIRE les messages de la plateforme. Aucune commande envoyée aux widgets natifs.
-   Les associations sont stockées localement (localStorage, par plateforme) et exportables en CSV / JSON.
+/* ===== Widget de test : association produit (CATIA / 3D) <-> tâche, dates et mise en évidence 3D =====
+   Lit les messages de la plateforme. Une seule action est envoyée aux autres widgets, et seulement sur clic :
+   la publication d'un message de SÉLECTION (« Test : mettre en évidence dans la vue 3D »). Aucune donnée n'est modifiée.
+   Associations et dates sont stockées localement (localStorage, par plateforme) et exportables en CSV / JSON.
    Ce script construit lui-même toute l'interface : la page HTML n'est qu'un chargeur. */
 
-var VERSION = '6';
+var VERSION = '8';
 
 var CSS = `
 body{font:14px 'Segoe UI',Arial,sans-serif;background:#eef2f6;color:#1c2938;margin:0;padding:12px}
@@ -17,17 +18,20 @@ main{max-width:1100px;margin:auto}h2{font-size:15px;margin:0 0 8px}
 .card{background:#fff;border:1px solid #cad3de;border-radius:9px;padding:12px;margin:10px 0}
 .status{padding:8px;background:#fff1d0;border-radius:5px}.ok{background:#d9f3e1}.bad{background:#ffe0de}
 .hint,small{color:#536477}.warn{color:#9a4b00;font-weight:600}
+.warnbox{background:#fff6c9;border:1px solid #e3c96a;padding:6px 8px;border-radius:5px;font-size:12px;margin:6px 0}
 .sel div.it{padding:5px 7px;border-left:4px solid #1263a8;background:#f2f8ff;margin:4px 0;border-radius:3px;overflow-wrap:anywhere}
 .sel div.it.t{border-left-color:#b36b00;background:#fff8ec}
+.sel div.it.t.off{border-left-color:#b3261e;background:#fff0ee}
 .sel .sub{font-size:12px;color:#536477}
-.bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0}
+.bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0}.bar select{width:auto}
 button{background:#1263a8;color:#fff;border:0;border-radius:5px;padding:8px 12px;cursor:pointer}
-button.big{font-size:16px;padding:10px 20px;background:#1a7f37}button.sec{background:#5b6f84}button.del{background:#b3261e;padding:3px 8px}
+button.big{font-size:16px;padding:10px 20px;background:#1a7f37}button.sec{background:#5b6f84}button.del{background:#b3261e;padding:3px 8px}button.eye{background:#5b6f84;padding:3px 8px;margin-right:4px}
 button:disabled{opacity:.5;cursor:default}
 table{border-collapse:collapse;width:100%;font-size:12px}th,td{border:1px solid #d2dae3;padding:4px 6px;text-align:left;vertical-align:top;overflow-wrap:anywhere}th{background:#e6edf5}
 tr.cur td{background:#fff6c9}
 .scroll{max-height:300px;overflow:auto}
 textarea,pre,input[type=text],select{width:100%;box-sizing:border-box;border:1px solid #9caabb;border-radius:4px;padding:6px;font:12px Consolas,monospace;background:#f7f9fb}
+input[type=date]{padding:4px;border:1px solid #9caabb;border-radius:4px;font:12px 'Segoe UI',Arial,sans-serif;background:#f7f9fb}
 textarea{height:120px}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:340px;overflow:auto}
 #as-drop{border:2px dashed #7b9cbb;background:#f2f8ff;padding:16px;text-align:center;border-radius:8px}#as-drop.over{background:#cde9ff;border-color:#1263a8}
 details summary{cursor:pointer;font-weight:600}label{display:block;margin:6px 0 2px}
@@ -51,22 +55,48 @@ var HTML = `
 <section class="card"><h2>Liens de la sélection courante</h2><div id="as-links" class="hint">—</div></section>
 
 <section class="card"><h2>Associations enregistrées <span id="as-count" class="hint"></span></h2>
-<div class="scroll"><table><thead><tr><th>Tâche</th><th>Produit</th><th>Type</th><th>Chemin</th><th>Date (heure locale)</th><th></th></tr></thead><tbody id="as-rows"></tbody></table></div>
+<div class="scroll"><table><thead><tr><th>Tâche</th><th>Produit</th><th>Type</th><th>Chemin</th><th>Dates de la tâche</th><th>Associé le</th><th></th></tr></thead><tbody id="as-rows"></tbody></table></div>
 <small id="as-store"></small></section>
 
+<section class="card"><h2>Dates des tâches</h2>
+<p class="hint">Dates saisies ici : le widget ne sait pas lire celles de Project Gantt. Elles sont rattachées à l'identifiant de la tâche et enregistrées dans ce navigateur.</p>
+<div class="scroll"><table><thead><tr><th>Tâche</th><th>Produits</th><th>Début</th><th>Fin</th><th></th></tr></thead><tbody id="as-dates"></tbody></table></div></section>
+
+<section class="card"><h2>Chronologie (essai 4D)</h2>
+<div class="bar"><button id="as-sim-prev" class="sec">−1 jour</button><input type="date" id="as-simdate"><button id="as-sim-next" class="sec">+1 jour</button></div>
+<div id="as-sim-sum" class="hint">—</div>
+<div class="bar"><span>Mettre en évidence en 3D les produits dont la tâche est :</span>
+<select id="as-sim-status"><option value="run">en cours</option><option value="done">terminée</option><option value="todo">à venir</option></select>
+<button id="as-sim-go">Mettre en évidence</button></div></section>
+
+<section class="card"><h2>Test : mettre en évidence dans la vue 3D</h2>
+<div class="warnbox">Ce test <b>publie un message de sélection</b> sur la plateforme, au format de ceux que tes rapports montrent. Il change la sélection des widgets qui l'écoutent (3D Markup, arborescence). Il ne modifie aucune donnée. Rien n'indique que 3D Markup réagit : c'est ce que le test doit établir.</div>
+<div class="bar"><label for="as-pub-topic" style="margin:0">Sujet :</label>
+<select id="as-pub-topic"><option value="eno">DS/ENO/select</option><option value="pad">DS/PADUtils/PADCommandProxy/select</option><option value="all">les trois sujets vus lors d'une sélection native</option></select>
+<label for="as-pub-id" style="margin:0">Identité :</label>
+<select id="as-pub-id"><option value="own">ce widget</option><option value="psE">imite l'arborescence (ENOSC2D_AP)</option></select></div>
+<div class="bar"><button id="as-pub-task">Mettre en évidence les produits de la tâche sélectionnée</button><span id="as-pub-msg" class="hint"></span></div>
+<pre id="as-pub-sum">Aucune publication.</pre>
+<small>Le bouton 👁 d'une ligne du tableau publie un seul produit. Après un envoi, regarder la vue 3D : un surlignage peut avoir lieu sans qu'un message soit émis. Pendant 3 secondes, le widget ne tient pas compte des sélections reçues d'autres applications.</small></section>
+
+<section class="card"><h2>Vérifier l'identité des instances</h2>
+<p class="hint">Sélectionner deux pieux d'une même semelle (ou en sélectionner un, le mémoriser comme A, puis en sélectionner un autre). Le widget compare leurs chemins d'identifiants niveau par niveau.</p>
+<div class="bar"><button id="as-cmp-a" class="sec">Mémoriser la sélection comme A</button><button id="as-cmp-go" class="sec">Comparer la sélection avec A</button><button id="as-cmp-two" class="sec">Comparer les 2 premiers sélectionnés</button></div>
+<pre id="as-cmp">Aucune comparaison.</pre></section>
+
 <section class="card"><h2>Dépôt d'une tâche ou d'un produit</h2>
-<p class="hint">Glisser une tâche (Project Gantt ou Collaborative Tasks) ou un produit n'importe où dans ce widget : la zone ci-dessous sert de repère. Il remplace la sélection correspondante.</p>
+<p class="hint">Glisser une tâche ou un produit n'importe où dans ce widget : la zone ci-dessous sert de repère. Pour un produit, la sélection dans l'arborescence est préférable : un dépôt ne transporte pas l'emplacement exact.</p>
 <div id="as-drop" tabindex="0">Déposer ici</div></section>
 
 <details class="card"><summary>Sauvegarde et échange (CSV / JSON)</summary>
-<p class="hint">Les associations sont gardées automatiquement dans ce navigateur, pour cette plateforme seulement. Exporter régulièrement pour en garder une copie ailleurs. Si le téléchargement est bloqué dans le dashboard, utiliser « Copier ».</p>
+<p class="hint">Associations et dates sont gardées automatiquement dans ce navigateur, pour cette plateforme seulement. Exporter régulièrement pour en garder une copie ailleurs. Si le téléchargement est bloqué dans le dashboard, utiliser « Copier ».</p>
 <div class="bar"><button id="as-exp-csv" class="sec">Exporter CSV</button><button id="as-exp-json" class="sec">Exporter JSON</button><button id="as-copy" class="sec">Copier</button><button id="as-imp" class="sec">Importer le JSON du cadre</button><button id="as-erase" class="del">Tout effacer</button></div>
 <textarea id="as-io" placeholder="Le contenu exporté s'affiche ici. Pour importer : coller un JSON exporté puis « Importer le JSON du cadre »."></textarea>
 <label for="as-file">Ou importer un fichier JSON</label><input type="file" id="as-file" accept=".json,application/json">
 <small id="as-io-msg"></small></details>
 
 <details class="card" id="as-diag-box"><summary>Diagnostic et lecture 3DSpace</summary>
-<p class="hint">Pour savoir ce que Project Gantt émet : cliquer sur « Nouvelle observation », puis sélectionner une tâche dans le Gantt. Les messages reçus mais non utilisés s'affichent en bas du diagnostic (nom du sujet, application émettrice et noms de champs, jamais les valeurs).</p>
+<p class="hint">Les messages reçus mais non utilisés s'affichent en bas du diagnostic (nom du sujet, application émettrice et noms de champs, jamais les valeurs). « Nouvelle observation » remet les compteurs à zéro.</p>
 <div class="bar"><button id="as-obs" class="sec">Nouvelle observation</button><button id="as-copy-diag" class="sec">Copier le diagnostic</button><small id="as-diag-msg"></small></div>
 <pre id="as-diag">…</pre>
 <h2 style="margin-top:10px">Lecture 3DSpace (GET seul)</h2>
@@ -79,9 +109,16 @@ var HTML = `
 <pre id="as-ws-out">Non testé.</pre></details>
 `;
 
-var STORE_KEY = 'bd_assoc4d_v1';
+var STORE_KEY = 'bd_assoc4d_v1', DATES_KEY = 'bd_assoc4d_dates_v1';
 var MAX_LINKS = 5000, DEDUPE_MS = 500;
 var PROD_MAX = 200, TASK_MAX = 50, UNH_MAX = 60;
+var OWN_APP = 'ASSOC4D_AP', REACT_MS = 3000;
+var PUB_TOPICS = {
+  eno: ['DS/ENO/select'],
+  pad: ['DS/PADUtils/PADCommandProxy/select'],
+  all: ['DS/ENO/select', 'DS/PADUtils/PADCommandProxy/select', 'webinwin:web:notification']
+};
+var DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /* Plateforme déduite de l'adresse de la page (ex. r1132101217487-eu1-ifwe... -> R1132101217487) */
 var PLAT = (function () { var m = /^((?:oi|r)\d{6,})-/i.exec(location.hostname || ''); return m ? m[1].toUpperCase() : ''; })();
@@ -89,14 +126,20 @@ var UNH_NOISE = /NGFilter|Frame3DXInfra|properties:|GetFilterSpec|volatileSubscr
 
 var state = { products: [], tasks: [], prodDesel: false, taskDesel: false, prodAt: '', taskAt: '' };
 var links = [];
-var labelCache = {};
+var taskDates = {};
+var labelCache = {}, typeCache = {};
 var seen = {};
 var unhandled = {};
 var pendingEmptyProd = null, pendingUnTask = null;
 var drops = 0, lastDropHost = '', lastDropSig = '', lastDropAt = 0;
-var dnd = { enter: 0, over: 0, drop: 0, types: {}, last: '', platform: 'non testé' };
+var dnd = { enter: 0, over: 0, drop: 0, mod: 0, types: {}, lastTypes: '', lastEnterAt: '', last: '', platform: 'non testé' };
 var platform = null, subs = [];
 var diag = { msgs: 0, ignored: 0, sel: 0, task: 0, taskShape: '', taskItemShape: '', platform: 'non chargé', storage: 'non testé', space: '', spaceSource: '', compass: 'non lancé' };
+/* publication de test */
+var ownUids = {}, ownUidCount = 0, nativeMeta = {}, lastTenant = '';
+var pub = null, pubUntil = 0;
+var cmpA = null, cmpText = '', cmpVerdict = '';
+var datesSig = '';
 
 /* ---------- utilitaires ---------- */
 /* Élément factice si un élément manque (sécurité) : évite de planter. */
@@ -114,6 +157,8 @@ function localDt(iso) {
   var d = new Date(iso);
   return isNaN(d.getTime()) ? '' : d.toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
+function fmtDay(s) { return DAY_RE.test(s || '') ? s.split('-').reverse().join('/') : ''; }
+function todayIso() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
 function clip(x, n) { x = String(x == null ? '' : x); return x.length > n ? x.slice(0, n) + '…' : x; }
 function str(x, n) { return typeof x === 'string' || typeof x === 'number' ? clip(x, n || 120) : ''; }
 function add(parent, tag, text, cls) { var e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; parent.appendChild(e); return e; }
@@ -124,6 +169,13 @@ function keys(x) { try { return Object.keys(x || {}).slice(0, 30).join(', '); } 
 function idOf(it) { return it ? str(it.objectId || it.id || it.physicalId || it.physicalid || it.identifier || '', 80) : ''; }
 function isTaskItem(it) { return it && /task/i.test(str(it.objectType || it.type, 40)); }
 function envMismatch(t) { return !!(t && t.env && PLAT && String(t.env).toUpperCase() !== PLAT); }
+/* D'après tes essais : les tâches créées dans le Gantt arrivent avec le type « Task », celles créées dans
+   Collaborative Tasks avec « dsplan:Task ». Observé sur trois tâches seulement : avertissement, pas blocage. */
+function isCollabType(t) { return !!(t && /^dsplan:/i.test(t.type || '')); }
+function uuid() {
+  try { if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID(); } catch (e) {}
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) { var r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); });
+}
 function normTopic(t) {
   return String(t)
     .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, '<uuid>')
@@ -165,7 +217,7 @@ function seenRecently(key) {
 var diagTimer = null;
 function scheduleDiag() {
   if (diagTimer) return;
-  diagTimer = setTimeout(function () { diagTimer = null; renderDiag(); }, 500);
+  diagTimer = setTimeout(function () { diagTimer = null; renderDiag(); renderPub(); }, 500);
 }
 
 function noteUnhandled(label, body) {
@@ -208,14 +260,27 @@ function route(topic, body) {
 }
 
 function handleSelection(body) {
-  var dd = body.data, uid = body.metadata && body.metadata.uid ? String(body.metadata.uid) : '';
+  var dd = body.data, md = body.metadata || {}, uid = md.uid ? String(md.uid) : '';
+  /* message émis par ce widget (test de mise en évidence) : on le reconnaît, on ne le traite pas comme une sélection */
+  if (uid && ownUids[uid]) { if (pub) { pub.echo++; scheduleDiag(); } return; }
   if (uid && seenRecently('S|' + uid)) return;
+  var app = str(md.xappid || String(md.appid || '').replace(/^\//, ''), 40);
+  if (app && md.originUid) nativeMeta[app] = { originUid: str(md.originUid, 60), originWidgetId: str(md.originWidgetId, 60) };
+  if (typeof dd.tenant === 'string' && dd.tenant) lastTenant = clip(dd.tenant, 40);
   var attrs = dd.attributes && typeof dd.attributes === 'object' ? dd.attributes : {};
   Object.keys(attrs).forEach(function (id) {
     var a = attrs[id];
     if (a && typeof a.label === 'string' && a.label) labelCache[id] = clip(a.label, 120);
+    if (a && typeof a.type === 'string' && a.type) typeCache[id] = clip(a.type, 40);
   });
   diag.sel++;
+  /* pendant la fenêtre qui suit une publication : on note qui réagit, sans toucher à la sélection du widget */
+  if (pub && Date.now() < pubUntil && app !== OWN_APP) {
+    var r = pub.reacted[app || '?'] || (pub.reacted[app || '?'] = { n: 0, paths: 0 });
+    r.n++; if (dd.paths.length) r.paths++;
+    scheduleDiag();
+    return;
+  }
   if (!dd.paths.length) {
     /* Un message vide précède souvent une nouvelle sélection : on attend avant de le considérer comme une désélection. */
     if (pendingEmptyProd) clearTimeout(pendingEmptyProd);
@@ -226,14 +291,15 @@ function handleSelection(body) {
   var prods = [];
   dd.paths.forEach(function (ids) {
     if (!Array.isArray(ids) || !ids.length) return;
-    var last = String(ids[ids.length - 1]), a = attrs[last] || {};
+    var sids = ids.slice(0, 30).map(String), last = sids[sids.length - 1], a = attrs[last] || {};
     prods.push({
       id: last, type: str(a.type, 40), label: str(a.label, 120),
       /* Le dernier identifiant désigne la référence : plusieurs emplacements peuvent la partager.
          L'emplacement (l'instance) est identifié par le chemin complet. */
-      key: ids.slice(0, 30).map(String).join('/'),
-      pathIds: ids.slice(0, 30).map(String),
-      pathLabels: ids.slice(0, 30).map(function (id) { var x = attrs[id] || {}; return str(x.label, 120); })
+      key: sids.join('/'),
+      pathIds: sids,
+      pathLabels: sids.map(function (id) { var x = attrs[id] || {}; return str(x.label, 120); }),
+      pathTypes: sids.map(function (id) { var x = attrs[id] || {}; return str(x.type, 40) || typeCache[id] || ''; })
     });
   });
   if (!prods.length) return;
@@ -242,7 +308,10 @@ function handleSelection(body) {
 }
 
 function taskOf(it, body, via) {
-  return { id: idOf(it), type: str(it.objectType || it.type, 40), label: str(it.displayName || it.label || it.title || it.name, 120), source: str(it.source || (body && body.source), 40), env: str(it.envId, 40), via: via };
+  return {
+    id: idOf(it), type: str(it.objectType || it.type, 40), label: str(it.displayName || it.label || it.title || it.name, 120),
+    source: str(it.source || (body && body.source), 40), env: str(it.envId, 40), state: str(it.objectState, 40), via: via
+  };
 }
 
 function handleTask(topic, body) {
@@ -273,6 +342,8 @@ function prodPath(p) {
   return parts.join(' › ') || '…';
 }
 function prodKey(p) { return p.key || p.id; }
+/* Produit issu d'un dépôt : on ne connaît pas son emplacement */
+function noLocation(p) { return p.pathIds.length === 1; }
 
 /* Un produit est identifié par son emplacement (chemin complet d'identifiants).
    Les anciennes associations (sans chemin d'identifiants) sont reconnues par référence + chemin lisible identique. */
@@ -291,20 +362,34 @@ function findLink(c) {
   }
   return -1;
 }
+/* Un produit déposé (sans emplacement) ne doit pas doubler un lien déjà fait sur un emplacement précis de la même référence */
+function coveredByLocated(p, tid) {
+  if (!noLocation(p)) return false;
+  return links.some(function (l) { return l.tid === tid && l.pid === p.id && l.pkey && l.pkey !== l.pid; });
+}
 
 function associate() {
   if (!state.products.length || !state.tasks.length) { setMsg('Sélectionner d\'abord au moins un produit et une tâche.'); return; }
-  var n = 0, dup = 0, full = false, foreign = state.tasks.some(envMismatch);
+  var n = 0, dup = 0, cov = 0, full = false, foreign = state.tasks.some(envMismatch), collab = state.tasks.some(isCollabType);
   state.tasks.forEach(function (t) {
     state.products.forEach(function (p) {
-      var c = { pid: p.id, pkey: prodKey(p), ptype: p.type, plabel: prodLabel(p), ppath: prodPath(p), tid: t.id, ttype: t.type, tlabel: t.label, tsrc: t.source, plat: PLAT, at: nowIso() };
+      if (coveredByLocated(p, t.id)) { cov++; return; }
+      var c = {
+        pid: p.id, pkey: prodKey(p), ptype: p.type, plabel: prodLabel(p), ppath: prodPath(p),
+        pt: (p.pathTypes || []).slice(), pl: p.pathLabels.map(function (lab, i) { return lab || labelCache[p.pathIds[i]] || ''; }),
+        tid: t.id, ttype: t.type, tlabel: t.label, tsrc: t.source, tstate: t.state, plat: PLAT, at: nowIso()
+      };
       if (findLink(c) >= 0) { dup++; return; }
       if (links.length >= MAX_LINKS) { full = true; return; }
       links.push(c); n++;
     });
   });
   save();
-  setMsg(n + ' association(s) créée(s)' + (dup ? ', ' + dup + ' déjà existante(s)' : '') + (full ? ' ; limite de ' + MAX_LINKS + ' atteinte' : '') + (foreign ? ' ⚠ tâche d\'une autre plateforme que celle de la page : vérifier.' : '.'));
+  setMsg(n + ' association(s) créée(s)' + (dup ? ', ' + dup + ' déjà existante(s)' : '') +
+    (cov ? ', ' + cov + ' ignorée(s) : produit déposé sans emplacement, déjà lié sur un emplacement précis (sélectionner le produit dans l\'arborescence)' : '') +
+    (full ? ' ; limite de ' + MAX_LINKS + ' atteinte' : '') +
+    (foreign ? ' ⚠ tâche d\'une autre plateforme que celle de la page : vérifier.' : '') +
+    (collab ? ' ⚠ tâche de type dsplan:Task (probablement créée dans Collaborative Tasks, hors Gantt).' : (foreign ? '' : '.')));
   render();
 }
 
@@ -313,12 +398,41 @@ function removeLink(l) {
   if (i >= 0) { links.splice(i, 1); save(); render(); }
 }
 
+/* ---------- dates des tâches ---------- */
+function validDay(s) { return typeof s === 'string' && DAY_RE.test(s) && !isNaN(new Date(s + 'T12:00:00').getTime()); }
+function datesWarn(d) { return d && d.s && d.e && d.s > d.e ? '⚠ début après la fin' : ''; }
+function setTaskDate(tid, k, v) {
+  v = String(v || '');
+  if (v && !validDay(v)) return false;
+  var d = taskDates[tid] || (taskDates[tid] = {});
+  if (v) d[k] = v; else delete d[k];
+  if (!d.s && !d.e) delete taskDates[tid];
+  saveDates(); renderTimeline(); renderTable(); renderDiag();
+  return true;
+}
+function datesText(tid) {
+  var d = taskDates[tid];
+  if (!d || (!d.s && !d.e)) return '—';
+  return (d.s ? fmtDay(d.s) : '?') + ' → ' + (d.e ? fmtDay(d.e) : '?');
+}
+function statusOf(d, day) {
+  if (!d || !d.s || !d.e) return 'none';
+  if (day < d.s) return 'todo';
+  if (day > d.e) return 'done';
+  return 'run';
+}
+
 /* ---------- stockage ---------- */
 function validLink(l) {
   return l && typeof l === 'object' && typeof l.pid === 'string' && typeof l.tid === 'string' && l.pid && l.tid;
 }
 function cleanLink(l) {
-  return { pid: clip(l.pid, 80), pkey: str(l.pkey, 700), ptype: str(l.ptype, 40), plabel: str(l.plabel, 120), ppath: str(l.ppath, 400), tid: clip(l.tid, 80), ttype: str(l.ttype, 40), tlabel: str(l.tlabel, 120), tsrc: str(l.tsrc, 40), plat: str(l.plat, 40), at: str(l.at, 40) };
+  return {
+    pid: clip(l.pid, 80), pkey: str(l.pkey, 700), ptype: str(l.ptype, 40), plabel: str(l.plabel, 120), ppath: str(l.ppath, 400),
+    pt: Array.isArray(l.pt) ? l.pt.slice(0, 30).map(function (x) { return str(x, 40); }) : [],
+    pl: Array.isArray(l.pl) ? l.pl.slice(0, 30).map(function (x) { return str(x, 120); }) : [],
+    tid: clip(l.tid, 80), ttype: str(l.ttype, 40), tlabel: str(l.tlabel, 120), tsrc: str(l.tsrc, 40), tstate: str(l.tstate, 40), plat: str(l.plat, 40), at: str(l.at, 40)
+  };
 }
 function loadStore() {
   try {
@@ -330,11 +444,27 @@ function loadStore() {
         links.forEach(function (l) { if (!l.plat) l.plat = PLAT; });
       }
     }
+    var sd = localStorage.getItem(DATES_KEY);
+    if (sd) {
+      var od = JSON.parse(sd);
+      if (od && od.dates && typeof od.dates === 'object') {
+        Object.keys(od.dates).slice(0, MAX_LINKS).forEach(function (tid) {
+          var d = od.dates[tid], c = {};
+          if (d && validDay(d.s)) c.s = d.s;
+          if (d && validDay(d.e)) c.e = d.e;
+          if (c.s || c.e) taskDates[clip(tid, 80)] = c;
+        });
+      }
+    }
     diag.storage = 'localStorage disponible';
   } catch (e) { diag.storage = 'localStorage indisponible : exporter régulièrement'; }
 }
 function save() {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify({ v: 2, links: links })); }
+  try { localStorage.setItem(STORE_KEY, JSON.stringify({ v: 3, links: links })); }
+  catch (e) { diag.storage = 'écriture impossible : exporter pour ne rien perdre'; }
+}
+function saveDates() {
+  try { localStorage.setItem(DATES_KEY, JSON.stringify({ v: 1, dates: taskDates })); }
   catch (e) { diag.storage = 'écriture impossible : exporter pour ne rien perdre'; }
 }
 
@@ -345,11 +475,14 @@ function csvCell(v) {
   return '"' + v.replace(/"/g, '""') + '"';
 }
 function toCsv() {
-  var rows = [['tache_id', 'tache_nom', 'tache_type', 'produit_id', 'produit_type', 'produit_libelle', 'chemin', 'date_association', 'plateforme', 'tache_source', 'chemin_ids']];
-  links.forEach(function (l) { rows.push([l.tid, l.tlabel, l.ttype, l.pid, l.ptype, l.plabel, l.ppath, l.at, l.plat, l.tsrc, l.pkey]); });
+  var rows = [['tache_id', 'tache_nom', 'tache_type', 'produit_id', 'produit_type', 'produit_libelle', 'chemin', 'date_association', 'plateforme', 'tache_source', 'chemin_ids', 'tache_etat', 'debut_tache', 'fin_tache']];
+  links.forEach(function (l) {
+    var d = taskDates[l.tid] || {};
+    rows.push([l.tid, l.tlabel, l.ttype, l.pid, l.ptype, l.plabel, l.ppath, l.at, l.plat, l.tsrc, l.pkey, l.tstate, d.s || '', d.e || '']);
+  });
   return '\ufeff' + rows.map(function (r) { return r.map(csvCell).join(';'); }).join('\r\n');
 }
-function toJson() { return JSON.stringify({ format: 'association-4d', version: 3, platform: PLAT, exported: nowIso(), links: links }, null, 1); }
+function toJson() { return JSON.stringify({ format: 'association-4d', version: 5, platform: PLAT, exported: nowIso(), links: links, taskDates: taskDates }, null, 1); }
 function download(name, text, mime) {
   try {
     var blob = new Blob([text], { type: mime }), u = URL.createObjectURL(blob), a = document.createElement('a');
@@ -361,9 +494,10 @@ function importText(text) {
   var o;
   try { o = JSON.parse(text); } catch (e) { txt('as-io-msg', 'JSON invalide.'); return; }
   var arr = Array.isArray(o) ? o : (o && Array.isArray(o.links) ? o.links : null);
-  if (!arr) { txt('as-io-msg', 'Aucune liste « links » trouvée.'); return; }
-  var n = 0, dup = 0, bad = 0, other = 0;
-  arr.slice(0, MAX_LINKS).forEach(function (l) {
+  var dts = o && !Array.isArray(o) && o.taskDates && typeof o.taskDates === 'object' ? o.taskDates : null;
+  if (!arr && !dts) { txt('as-io-msg', 'Aucune liste « links » ni « taskDates » trouvée.'); return; }
+  var n = 0, dup = 0, bad = 0, other = 0, nd = 0;
+  (arr || []).slice(0, MAX_LINKS).forEach(function (l) {
     if (!validLink(l)) { bad++; return; }
     var c = cleanLink(l);
     if (c.plat && PLAT && c.plat.toUpperCase() !== PLAT) { other++; return; }
@@ -372,29 +506,175 @@ function importText(text) {
     if (links.length >= MAX_LINKS) return;
     links.push(c); n++;
   });
-  save(); render();
-  txt('as-io-msg', n + ' ajoutée(s), ' + dup + ' déjà présente(s), ' + bad + ' ignorée(s)' + (other ? ', ' + other + ' refusée(s) car d\'une autre plateforme que ' + PLAT : '') + '.');
+  if (dts) {
+    Object.keys(dts).slice(0, MAX_LINKS).forEach(function (tid) {
+      var d = dts[tid]; if (!d || typeof d !== 'object') return;
+      var cur = taskDates[clip(tid, 80)] || {}, changed = false;
+      if (!cur.s && validDay(d.s)) { cur.s = d.s; changed = true; }
+      if (!cur.e && validDay(d.e)) { cur.e = d.e; changed = true; }
+      if (changed) { taskDates[clip(tid, 80)] = cur; nd++; }
+    });
+  }
+  save(); saveDates(); datesSig = ''; render();
+  txt('as-io-msg', n + ' ajoutée(s), ' + dup + ' déjà présente(s), ' + bad + ' ignorée(s)' + (other ? ', ' + other + ' refusée(s) car d\'une autre plateforme que ' + PLAT : '') + (dts ? ' ; dates de ' + nd + ' tâche(s) ajoutée(s)' : '') + '.');
+}
+
+/* ---------- publication de test : mettre en évidence en 3D ---------- */
+function linkNodes(l) {
+  var ids = l.pkey ? String(l.pkey).split('/') : [l.pid];
+  var types = l.pt && l.pt.length === ids.length ? l.pt : ids.map(function (x, i) { return i === ids.length - 1 ? l.ptype : ''; });
+  var labels = l.pl && l.pl.length === ids.length ? l.pl : ids.map(function (x, i) { return i === ids.length - 1 ? l.plabel : ''; });
+  return { ids: ids, types: types, labels: labels };
+}
+
+/* Format observé dans tes rapports (sélection native) : metadata + data{paths, tenant, attributes, version, changeControl, sharedID, focusOn} */
+function buildSelectMessage(items, mode) {
+  var app = mode === 'psE' ? 'ENOSC2D_AP' : OWN_APP;
+  var nm = mode === 'psE' ? (nativeMeta.ENOSC2D_AP || {}) : {};
+  var wid = ''; try { wid = str(window.widget && window.widget.id, 40); } catch (e) {}
+  var attrs = {}, paths = [];
+  items.forEach(function (n) {
+    paths.push(n.ids.slice());
+    n.ids.forEach(function (id, i) {
+      var a = attrs[id] || (attrs[id] = {});
+      var ty = n.types[i] || typeCache[id] || '', lb = n.labels[i] || labelCache[id] || '';
+      if (ty) a.type = ty;
+      if (lb) a.label = lb;
+      a.i3dx = '';
+    });
+  });
+  return {
+    metadata: {
+      uid: uuid(), originUid: nm.originUid || ownOriginUid, timestamp: Date.now(),
+      appid: '/' + app, xappid: app, originWidgetId: nm.originWidgetId || wid || 'assoc4d'
+    },
+    data: {
+      paths: paths, tenant: lastTenant, attributes: attrs, version: '1.1',
+      changeControl: {
+        version: '1.0', AuthoringContextHeader: null,
+        change: { id: '', name: '', context: [], title: '', description: '', severity: '' },
+        evolution: { id: '', displayExpression: '', expression: '' }, configurationRevision: null
+      },
+      sharedID: app, focusOn: false
+    }
+  };
+}
+var ownOriginUid = uuid();
+
+function setPubMsg(s) { txt('as-pub-msg', s); }
+
+function publishLinks(ls, what) {
+  var seenK = {}, items = [], skipped = 0;
+  ls.forEach(function (l) {
+    var n = linkNodes(l), k = n.ids.join('/');
+    if (seenK[k]) return; seenK[k] = 1;
+    if (n.ids.length < 2) { skipped++; return; }
+    items.push(n);
+  });
+  items = items.slice(0, PROD_MAX);
+  if (!items.length) {
+    setPubMsg(skipped ? 'Rien à publier : ' + skipped + ' association(s) sans emplacement connu (produit déposé). Sélectionner le produit dans l\'arborescence, puis refaire l\'association.' : 'Rien à publier : aucune association correspondante.');
+    return;
+  }
+  if (!platform || typeof platform.publish !== 'function') { setPubMsg('PlatformAPI indisponible : publication impossible.'); return; }
+  var mode = el('as-pub-id').value === 'psE' ? 'psE' : 'own';
+  var topics = PUB_TOPICS[el('as-pub-topic').value] || PUB_TOPICS.eno;
+  var msg = buildSelectMessage(items, mode);
+  if (ownUidCount > 50) { ownUids = {}; ownUidCount = 0; }
+  ownUids[msg.metadata.uid] = 1; ownUidCount++;
+  pub = { at: nowIso(), topics: topics.slice(), mode: mode, n: items.length, skipped: skipped, echo: 0, reacted: {}, errors: [], what: what };
+  pubUntil = Date.now() + REACT_MS;
+  topics.forEach(function (t) {
+    try { platform.publish(t, JSON.parse(JSON.stringify(msg))); } catch (e) { pub.errors.push(t + ' : ' + clip(e.message, 60)); }
+  });
+  setPubMsg(items.length + ' chemin(s) publié(s) sur ' + topics.length + ' sujet(s). Regarder la vue 3D.' + (skipped ? ' (' + skipped + ' ignoré(s) : emplacement inconnu)' : ''));
+  renderPub();
+  setTimeout(function () { renderPub(); renderDiag(); }, REACT_MS + 300);
+}
+
+function pubText() {
+  if (!pub) return 'aucune publication depuis l\'ouverture du widget.';
+  var open = Date.now() < pubUntil;
+  var re = Object.keys(pub.reacted).map(function (k) { return k + ' ×' + pub.reacted[k].n + ' (' + pub.reacted[k].paths + ' avec chemin)'; }).join(', ');
+  return hhmmss(pub.at) + ' — ' + pub.what + ' : ' + pub.n + ' chemin(s) sur ' + pub.topics.join(' + ') + ' (identité : ' + (pub.mode === 'psE' ? 'ENOSC2D_AP' : 'ce widget') + ')' +
+    (pub.skipped ? ', ' + pub.skipped + ' ignoré(s) sans emplacement' : '') +
+    '\n  écho de notre message : ×' + pub.echo +
+    '\n  réactions d\'autres applications' + (open ? ' (fenêtre encore ouverte)' : ' en ' + (REACT_MS / 1000) + ' s') + ' : ' + (re || 'aucune sélection émise') +
+    (pub.errors.length ? '\n  erreurs : ' + pub.errors.join(' ; ') : '') +
+    (!open && !re ? '\n  Aucun message de sélection en retour ne prouve rien : un surlignage 3D peut avoir lieu sans message.' : '');
+}
+function renderPub() { txt('as-pub-sum', pub ? pubText() : 'Aucune publication.'); }
+
+/* ---------- chronologie ---------- */
+function renderTimeline() {
+  var day = el('as-simdate').value;
+  if (!validDay(day)) { txt('as-sim-sum', 'Choisir une date.'); return; }
+  var c = { run: 0, done: 0, todo: 0, none: 0 };
+  links.forEach(function (l) { c[statusOf(taskDates[l.tid], day)]++; });
+  txt('as-sim-sum', links.length
+    ? 'Au ' + fmtDay(day) + ' : en cours ' + c.run + ' · terminées ' + c.done + ' · à venir ' + c.todo + ' · sans dates ' + c.none + ' (association(s)).'
+    : 'Aucune association enregistrée.');
+}
+function shiftDay(n) {
+  var day = el('as-simdate').value;
+  if (!validDay(day)) day = todayIso();
+  var d = new Date(day + 'T12:00:00'); d.setDate(d.getDate() + n);
+  el('as-simdate').value = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  renderTimeline();
+}
+function simGo() {
+  var day = el('as-simdate').value, want = el('as-sim-status').value;
+  if (!validDay(day)) { setPubMsg('Choisir une date de chronologie.'); return; }
+  var ls = links.filter(function (l) { return statusOf(taskDates[l.tid], day) === want; });
+  if (!ls.length) { setPubMsg('Aucune association dont la tâche est « ' + (want === 'run' ? 'en cours' : want === 'done' ? 'terminée' : 'à venir') + ' » au ' + fmtDay(day) + '.'); return; }
+  publishLinks(ls, 'chronologie au ' + fmtDay(day) + ' (' + want + ')');
+}
+
+/* ---------- comparaison de deux produits ---------- */
+function compareProducts(a, b) {
+  var lines = [], n = Math.max(a.pathIds.length, b.pathIds.length), diffLv = [];
+  lines.push('A : ' + (prodLabel(a) || '(sans libellé)') + ' — ' + a.pathIds.length + ' niveau(x)');
+  lines.push('B : ' + (prodLabel(b) || '(sans libellé)') + ' — ' + b.pathIds.length + ' niveau(x)');
+  for (var i = 0; i < n; i++) {
+    var ia = a.pathIds[i], ib = b.pathIds[i];
+    var lab = (a.pathLabels[i] || labelCache[ia] || b.pathLabels[i] || labelCache[ib] || '');
+    var st = !ia || !ib ? 'absent d\'un côté' : ia === ib ? 'identique' : 'DIFFÉRENT';
+    if (ia && ib && ia !== ib) diffLv.push(i + 1);
+    lines.push('  niveau ' + (i + 1) + ' : ' + shortId(ia || '-') + ' | ' + shortId(ib || '-') + ' → ' + st + (lab ? ' (' + lab + ')' : ''));
+  }
+  var v;
+  if (prodKey(a) === prodKey(b)) v = 'Même emplacement : chemins d\'identifiants identiques.';
+  else if (a.id === b.id) v = 'Même référence, emplacements différents : distingués par le chemin' + (diffLv.length ? ' (niveau(x) ' + diffLv.join(', ') + ')' : '') + '. Le widget crée bien deux associations distinctes.';
+  else v = 'Références différentes (dernier identifiant différent).';
+  if (noLocation(a) || noLocation(b)) v += ' ⚠ Au moins un des deux vient d\'un dépôt (emplacement inconnu) : comparaison peu informative.';
+  lines.push('→ ' + v);
+  cmpText = lines.join('\n'); cmpVerdict = v;
+  txt('as-cmp', cmpText);
+  renderDiag();
 }
 
 /* ---------- affichage ---------- */
 function renderSel(boxId, noteId, items, isTask, desel, at) {
   var box = el(boxId); clearEl(box);
   if (!items.length) {
-    add(box, 'div', isTask ? 'Ouvrir une tâche dans Collaborative Tasks, ou la glisser dans ce widget.' : 'Sélectionner un produit dans l\'arborescence ou la vue 3D.', 'hint');
+    add(box, 'div', isTask ? 'Ouvrir une tâche du Gantt dans Collaborative Tasks, ou la glisser dans ce widget.' : 'Sélectionner un produit dans l\'arborescence ou la vue 3D.', 'hint');
     txt(noteId, '');
     return;
   }
   items.slice(0, 6).forEach(function (it) {
-    var d = add(box, 'div', null, 'it' + (isTask ? ' t' : ''));
+    var d = add(box, 'div', null, 'it' + (isTask ? ' t' : '') + (isTask && isCollabType(it) ? ' off' : ''));
     var label = isTask ? it.label : prodLabel(it);
     add(d, 'b', (it.type ? it.type + ' · ' : '') + (label || '(libellé inconnu)'));
-    var sub = isTask ? 'Source : ' + (it.source || '?') + ' (' + (it.via || 'sélection') + ') — ' + shortId(it.id) : prodPath(it) + ' — ' + shortId(it.id);
+    var sub = isTask
+      ? 'Source : ' + (it.source || '?') + ' (' + (it.via || 'sélection') + ')' + (it.state ? ' · état : ' + it.state : '') + ' — ' + shortId(it.id)
+      : prodPath(it) + ' — ' + shortId(it.id) + (noLocation(it) ? ' (emplacement inconnu : dépôt)' : '');
     add(d, 'div', sub, 'sub');
   });
   if (items.length > 6) add(box, 'div', '+ ' + (items.length - 6) + ' autre(s)', 'hint');
   var note = el(noteId);
   clearEl(note);
   if (isTask && items.some(envMismatch)) add(note, 'span', '⚠ Plateforme de la tâche (' + items.filter(envMismatch)[0].env + ') différente de celle de la page (' + PLAT + '). ', 'warn');
+  if (isTask && items.some(isCollabType)) add(note, 'span', '⚠ Type dsplan:Task : tâche probablement créée dans Collaborative Tasks, donc hors planning du Gantt. ', 'warn');
   note.appendChild(document.createTextNode((desel ? 'Désélectionné — dernier choix conservé. ' : '') + 'Reçu à ' + hhmmss(at) + (items.length > 1 ? ' · ' + items.length + ' éléments' : '')));
 }
 
@@ -429,40 +709,82 @@ function renderTable() {
   var sorted = links.slice().sort(function (a, b) { return (a.tlabel || '').localeCompare(b.tlabel || '') || (a.plabel || '').localeCompare(b.plabel || '') || (a.ppath || '').localeCompare(b.ppath || ''); });
   txt('as-count', '(' + links.length + ')');
   if (!sorted.length) {
-    var tr0 = add(tb, 'tr'); var td0 = add(tr0, 'td', 'Aucune association pour l\'instant.', 'hint'); td0.colSpan = 6; return;
+    var tr0 = add(tb, 'tr'); var td0 = add(tr0, 'td', 'Aucune association pour l\'instant.', 'hint'); td0.colSpan = 7; return;
   }
   sorted.slice(0, 300).forEach(function (l) {
     var cur = curT[l.tid] || state.products.some(function (p) { return prodMatches(l, p); });
     var tr = add(tb, 'tr', null, cur ? 'cur' : '');
-    add(tr, 'td', l.tlabel || shortId(l.tid));
+    add(tr, 'td', (l.tlabel || shortId(l.tid)) + (/^dsplan:/i.test(l.ttype || '') ? ' ⚠' : ''));
     add(tr, 'td', l.plabel || shortId(l.pid));
     add(tr, 'td', l.ptype);
     add(tr, 'td', l.ppath);
+    add(tr, 'td', datesText(l.tid));
     add(tr, 'td', localDt(l.at));
-    var td = add(tr, 'td'), b = add(td, 'button', '✕', 'del');
-    b.title = 'Supprimer cette association';
+    var td = add(tr, 'td');
+    var eye = add(td, 'button', '👁', 'eye'); eye.title = 'Mettre en évidence ce produit dans la vue 3D (test)';
+    eye.onclick = function () { publishLinks([l], 'une association'); };
+    var b = add(td, 'button', '✕', 'del'); b.title = 'Supprimer cette association';
     b.onclick = function () { removeLink(l); };
   });
-  if (sorted.length > 300) { var tr1 = add(tb, 'tr'); var td1 = add(tr1, 'td', '… ' + (sorted.length - 300) + ' autres (visibles dans l\'export)', 'hint'); td1.colSpan = 6; }
+  if (sorted.length > 300) { var tr1 = add(tb, 'tr'); var td1 = add(tr1, 'td', '… ' + (sorted.length - 300) + ' autres (visibles dans l\'export)', 'hint'); td1.colSpan = 7; }
+}
+
+function renderDates() {
+  var map = {}, rows = [];
+  links.forEach(function (l) {
+    if (!map[l.tid]) { map[l.tid] = { id: l.tid, label: l.tlabel, type: l.ttype, n: 0 }; rows.push(map[l.tid]); }
+    map[l.tid].n++;
+  });
+  state.tasks.forEach(function (t) {
+    if (!map[t.id]) { map[t.id] = { id: t.id, label: t.label, type: t.type, n: 0 }; rows.push(map[t.id]); }
+  });
+  rows.sort(function (a, b) { return (a.label || '').localeCompare(b.label || ''); });
+  var sig = rows.map(function (r) { var d = taskDates[r.id] || {}; return r.id + '|' + r.n + '|' + (d.s || '') + '~' + (d.e || ''); }).join(';');
+  var ae = document.activeElement;
+  if (ae && ae.getAttribute && ae.getAttribute('data-date')) return; /* ne pas reconstruire pendant une saisie */
+  if (sig === datesSig) return;
+  datesSig = sig;
+  var tb = el('as-dates'); clearEl(tb);
+  if (!rows.length) { var tr0 = add(tb, 'tr'); var td0 = add(tr0, 'td', 'Associer ou sélectionner une tâche pour saisir ses dates.', 'hint'); td0.colSpan = 5; return; }
+  rows.slice(0, 200).forEach(function (r) {
+    var d = taskDates[r.id] || {}, tr = add(tb, 'tr');
+    add(tr, 'td', (r.label || shortId(r.id)) + (/^dsplan:/i.test(r.type || '') ? ' ⚠' : ''));
+    add(tr, 'td', String(r.n));
+    var warnTd = null;
+    function mk(k) {
+      var td = add(tr, 'td'), inp = add(td, 'input');
+      inp.type = 'date'; inp.value = d[k] || ''; inp.setAttribute('data-date', r.id + '|' + k);
+      inp.onchange = function () {
+        if (!setTaskDate(r.id, k, inp.value)) inp.value = (taskDates[r.id] || {})[k] || '';
+        if (warnTd) warnTd.textContent = datesWarn(taskDates[r.id]);
+      };
+    }
+    mk('s'); mk('e');
+    warnTd = add(tr, 'td', datesWarn(d), 'warn');
+  });
 }
 
 function renderDiag() {
   var uk = Object.keys(unhandled).sort(function (a, b) { return unhandled[b].last < unhandled[a].last ? -1 : 1; }).slice(0, 14);
   txt('as-diag', [
     'Version du script : v' + VERSION,
-    'Glisser-déposer : dragenter ×' + dnd.enter + ', dragover ×' + dnd.over + ', drop ×' + dnd.drop + ' ; types vus : ' + (Object.keys(dnd.types).join(', ') || '(aucun)'),
+    'Glisser-déposer (depuis la dernière observation) : dragenter ×' + dnd.enter + ', dragover ×' + dnd.over + ', drop ×' + dnd.drop + ' ; appels du module de la plateforme ×' + dnd.mod,
+    'Dernier glissement au-dessus du widget : ' + (dnd.lastEnterAt ? hhmmss(dnd.lastEnterAt) + ', types : ' + (dnd.lastTypes || '(aucun type)') : '(aucun)'),
     'Dépôts reçus : ' + drops + ' ; dernier : ' + (dnd.last || '(aucun)'),
-    'Module de dépôt de la plateforme (DataDragAndDrop, non confirmé) : ' + dnd.platform,
+    'Module de dépôt de la plateforme : ' + dnd.platform,
+    '',
+    'Pilotage 3D (test) : ' + pubText(),
+    'Comparaison de deux produits : ' + (cmpText ? '\n' + cmpText : '(aucune)'),
     '',
     'widget : ' + typeof window.widget + ' ; require : ' + typeof window.require + ' ; iframe : ' + (window !== window.parent),
     'Origine de la page : ' + location.origin + ' ; plateforme déduite : ' + (PLAT || '(inconnue)'),
-    'PlatformAPI : ' + diag.platform,
+    'PlatformAPI : ' + diag.platform + ' (publish : ' + (platform && typeof platform.publish === 'function' ? 'oui' : 'non') + ')',
     'Abonnements PlatformAPI : ' + (subs.join(', ') || 'aucun'),
     'Messages reçus : ' + diag.msgs + ' ; ignorés (origine inattendue) : ' + diag.ignored,
     'Messages de sélection traités : ' + diag.sel + ' ; messages tâche : ' + diag.task,
     'Dernier message tâche — champs : ' + (diag.taskShape || '(aucun)'),
     'Dernier élément tâche — champs : ' + (diag.taskItemShape || '(aucun)'),
-    'Stockage : ' + diag.storage,
+    'Stockage : ' + diag.storage + ' ; associations : ' + links.length + ' ; tâches avec dates : ' + Object.keys(taskDates).length,
     '3DSpace : ' + (diag.space ? 'adresse détectée (' + diag.spaceSource + ')' : 'non détectée') + ' ; service plateforme : ' + diag.compass,
     '',
     'Messages reçus non utilisés depuis l\'observation (' + Object.keys(unhandled).length + ') :',
@@ -474,7 +796,8 @@ function render() {
   renderSel('as-prod', 'as-prod-note', state.products, false, state.prodDesel, state.prodAt);
   renderSel('as-task', 'as-task-note', state.tasks, true, state.taskDesel, state.taskAt);
   el('as-assoc').disabled = !(state.products.length && state.tasks.length);
-  renderLinks(); renderTable(); renderDiag();
+  el('as-cmp-two').disabled = state.products.length < 2;
+  renderLinks(); renderTable(); renderDates(); renderTimeline(); renderDiag(); renderPub();
   txt('as-store', diag.storage);
 }
 
@@ -593,8 +916,8 @@ function runGet() {
 }
 
 /* ---------- dépôt (glisser-déposer) ----------
-   Trois principes : tout ce qui arrive est compté et décrit dans le diagnostic ; tous les types de données sont essayés
-   (un seul type lisible suffit) ; le dépôt est accepté partout dans le widget, sauf dans un champ de saisie. */
+   Tout ce qui arrive est compté et décrit dans le diagnostic ; tous les types de données sont essayés ;
+   le dépôt est accepté partout dans le widget, sauf dans un champ de saisie. */
 function typesOf(dt) { try { return dt && dt.types ? Array.prototype.slice.call(dt.types) : []; } catch (e) { return []; } }
 function itemsOf(o) {
   if (!o || typeof o !== 'object') return [];
@@ -604,7 +927,9 @@ function itemsOf(o) {
   return [];
 }
 function describeTried(tried) {
-  return tried.map(function (x) { return x.t + ' (' + x.n + ' car., ' + (x.json ? 'JSON, ' + x.items + ' élément(s)' : 'non JSON') + ')'; }).join(' ; ') || 'aucun type';
+  return tried.map(function (x) {
+    return x.t + ' (' + x.n + ' car., ' + (x.json ? 'JSON, ' + x.items + ' élément(s)' + (x.items ? '' : ' ; champs : ' + (x.shape || '?')) : 'non JSON') + ')';
+  }).join(' ; ') || 'aucun type';
 }
 
 function processDrop(dt, via) {
@@ -616,11 +941,11 @@ function processDrop(dt, via) {
     if (t === 'Files') return;
     var v = '';
     try { v = dt.getData(t) || ''; } catch (e) {}
-    var inf = { t: clip(t, 40), n: v.length, json: false, items: 0 };
+    var inf = { t: clip(t, 40), n: v.length, json: false, items: 0, shape: '' };
     if (v) {
       try {
         var o = JSON.parse(v), its = itemsOf(o);
-        inf.json = true; inf.items = its.length;
+        inf.json = true; inf.items = its.length; inf.shape = shape(o, 1);
         if (!found && its.length) found = { obj: o, items: its };
       } catch (e) { /* type non JSON : on essaie le suivant */ }
     }
@@ -631,13 +956,13 @@ function processDrop(dt, via) {
 
 /* Données déjà extraites (module de la plateforme) */
 function processPayload(data, via) {
-  drops++;
+  drops++; dnd.mod++;
   var tried = [], found = null;
   try {
     var o = typeof data === 'string' ? JSON.parse(data) : data, its = itemsOf(o);
-    tried.push({ t: 'données', n: typeof data === 'string' ? data.length : 0, json: !!o && typeof o === 'object', items: its.length });
+    tried.push({ t: 'données', n: typeof data === 'string' ? data.length : 0, json: !!o && typeof o === 'object', items: its.length, shape: shape(o, 1) });
     if (its.length) found = { obj: o, items: its };
-  } catch (e) { tried.push({ t: 'données', n: String(data || '').length, json: false, items: 0 }); }
+  } catch (e) { tried.push({ t: 'données', n: String(data || '').length, json: false, items: 0, shape: '' }); }
   finishDrop(found, tried, via);
 }
 
@@ -660,10 +985,11 @@ function applyDropped(obj, items, via) {
     var s = str(it.source || osrc, 40); if (s) srcs[s] = 1;
     if (isTaskItem(it) || s === 'ENOTASK_AP') tasks.push(taskOf(it, { source: osrc }, 'dépôt'));
     else {
-      var label = str(it.displayName || it.label, 120);
+      var label = str(it.displayName || it.label, 120), type = str(it.objectType || it.type, 40);
       if (label) labelCache[id] = label;
+      if (type) typeCache[id] = type;
       /* Un dépôt ne transporte pas l'emplacement : la clé est la référence seule. */
-      prods.push({ id: id, key: id, type: str(it.objectType || it.type, 40), label: label, pathIds: [id], pathLabels: [label] });
+      prods.push({ id: id, key: id, type: type, label: label, pathIds: [id], pathLabels: [label], pathTypes: [type] });
     }
   });
   if (tasks.length) { state.tasks = tasks.slice(0, TASK_MAX); state.taskDesel = false; state.taskAt = nowIso(); }
@@ -680,7 +1006,11 @@ function dropUsable(e) {
 }
 function installDrop() {
   var zone = el('as-drop');
-  function seeTypes(e) { typesOf(e.dataTransfer).forEach(function (x) { if (Object.keys(dnd.types).length < 10) dnd.types[clip(x, 40)] = 1; }); }
+  function seeTypes(e) {
+    var t = typesOf(e.dataTransfer);
+    t.forEach(function (x) { if (Object.keys(dnd.types).length < 10) dnd.types[clip(x, 40)] = 1; });
+    dnd.lastTypes = t.join(', '); dnd.lastEnterAt = nowIso();
+  }
   /* en phase de capture : on voit l'événement même si un autre élément du widget l'intercepte */
   document.addEventListener('dragenter', function (e) {
     dnd.enter++; seeTypes(e);
@@ -699,7 +1029,7 @@ function installDrop() {
     else scheduleDiag();
   }, true);
 
-  /* Second chemin, à confirmer : module de glisser-déposer de la plateforme (utilisé par les widgets natifs). Sans effet s'il est absent. */
+  /* Module de glisser-déposer de la plateforme (présent sur ta plateforme : draggable, droppable, clean, on, off). */
   load('DS/DataDragAndDrop/DataDragAndDrop', function (D) {
     dnd.platform = 'module chargé (' + keys(D) + ')';
     try {
@@ -740,6 +1070,7 @@ function init() {
   var inFrame = typeof window.require === 'function' || (function () { try { return window.parent !== window && typeof window.parent.require === 'function'; } catch (e) { return false; } })();
   txt('as-banner', (inFrame ? 'Association 4D v' + VERSION + ' prête : en écoute des sélections.' : 'Hors dashboard : les sélections de la plateforme ne seront pas reçues. Seul le dépôt fonctionne.') + (PLAT ? ' Plateforme : ' + PLAT + '.' : ''));
   el('as-banner').className = 'status ' + (inFrame ? 'ok' : 'bad');
+  el('as-simdate').value = todayIso();
 
   window.addEventListener('message', onMessage);
 
@@ -753,8 +1084,43 @@ function init() {
 
   el('as-assoc').onclick = associate;
   el('as-clear').onclick = function () { state.products = []; state.tasks = []; state.prodDesel = state.taskDesel = false; setMsg('Sélection vidée (les associations enregistrées sont conservées).'); render(); };
-  el('as-obs').onclick = function () { unhandled = {}; renderDiag(); };
+  el('as-obs').onclick = function () {
+    unhandled = {};
+    dnd.enter = 0; dnd.over = 0; dnd.drop = 0; dnd.mod = 0; dnd.types = {}; dnd.lastTypes = ''; dnd.lastEnterAt = ''; dnd.last = ''; drops = 0;
+    renderDiag();
+  };
   el('as-copy-diag').onclick = copyDiag;
+
+  /* dates et chronologie */
+  el('as-simdate').onchange = renderTimeline;
+  el('as-sim-prev').onclick = function () { shiftDay(-1); };
+  el('as-sim-next').onclick = function () { shiftDay(1); };
+  el('as-sim-go').onclick = simGo;
+
+  /* mise en évidence 3D : produits de la tâche sélectionnée */
+  el('as-pub-task').onclick = function () {
+    if (!state.tasks.length) { setPubMsg('Sélectionner d\'abord une tâche.'); return; }
+    var ids = {}; state.tasks.forEach(function (t) { ids[t.id] = 1; });
+    var ls = links.filter(function (l) { return ids[l.tid]; });
+    if (!ls.length) { setPubMsg('Aucune association pour la tâche sélectionnée.'); return; }
+    publishLinks(ls, 'produits de la tâche sélectionnée');
+  };
+
+  /* comparaison */
+  el('as-cmp-a').onclick = function () {
+    if (!state.products.length) { txt('as-cmp', 'Sélectionner d\'abord un produit.'); return; }
+    cmpA = state.products[0];
+    txt('as-cmp', 'A mémorisé : ' + (prodLabel(cmpA) || shortId(cmpA.id)) + ' (' + cmpA.pathIds.length + ' niveau(x)). Sélectionner maintenant un autre produit, puis « Comparer la sélection avec A ».');
+  };
+  el('as-cmp-go').onclick = function () {
+    if (!cmpA) { txt('as-cmp', 'Mémoriser d\'abord A.'); return; }
+    if (!state.products.length) { txt('as-cmp', 'Sélectionner un produit à comparer avec A.'); return; }
+    compareProducts(cmpA, state.products[0]);
+  };
+  el('as-cmp-two').onclick = function () {
+    if (state.products.length < 2) { txt('as-cmp', 'Sélectionner deux produits (Ctrl + clic).'); return; }
+    compareProducts(state.products[0], state.products[1]);
+  };
 
   el('as-exp-csv').onclick = function () { var t = toCsv(); el('as-io').value = t; download('associations_4D.csv', t, 'text/csv;charset=utf-8'); txt('as-io-msg', links.length + ' association(s) exportée(s) en CSV.'); };
   el('as-exp-json').onclick = function () { var t = toJson(); el('as-io').value = t; download('associations_4D.json', t, 'application/json'); txt('as-io-msg', links.length + ' association(s) exportée(s) en JSON.'); };
@@ -772,8 +1138,8 @@ function init() {
   var erasePending = false;
   el('as-erase').onclick = function () {
     var b = el('as-erase');
-    if (!erasePending) { erasePending = true; b.textContent = 'Confirmer : tout effacer ?'; setTimeout(function () { erasePending = false; b.textContent = 'Tout effacer'; }, 4000); return; }
-    erasePending = false; b.textContent = 'Tout effacer'; links = []; save(); setMsg('Toutes les associations ont été effacées.'); render();
+    if (!erasePending) { erasePending = true; b.textContent = 'Confirmer : tout effacer (associations et dates) ?'; setTimeout(function () { erasePending = false; b.textContent = 'Tout effacer'; }, 4000); return; }
+    erasePending = false; b.textContent = 'Tout effacer'; links = []; taskDates = {}; datesSig = ''; save(); saveDates(); setMsg('Toutes les associations et dates ont été effacées.'); render();
   };
 
   installDrop();
